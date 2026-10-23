@@ -1,40 +1,32 @@
-# VetroStudio 3D — struttura essenziale Cloudflare
+# VetroStudio 3D — Cloudflare Pages + D1
 
-La struttura è stata ridotta a **una sola cartella (`public/`)** e ai file indispensabili nella radice:
+## Struttura minima
+- `public/index.html` e `public/app.js`: interfaccia
+- `functions/api/[[path]].js`: API Cloudflare Pages Functions
+- `worker.js`: logica API condivisa
+- `schema.sql`: schema database D1
 
-```
-VetroStudio3D_ESSENZIALE/
-  public/
-    index.html     # interfaccia
-    app.js         # interazione e configuratore
-  worker.js        # API, login e autorizzazioni
-  schema.sql       # tabelle e catalogo base D1
-  wrangler.toml    # configurazione Cloudflare
-  package.json     # comandi per pubblicazione
-  README.md        # istruzioni
-```
+## GitHub → Cloudflare Pages
+Nel progetto Pages collegato a GitHub usa:
+- Framework preset: None
+- Root directory: `/` (repository root)
+- Build command: `exit 0`
+- Build output directory: `public`
+- Production branch: `main`
 
-**La cartella `public/` è necessaria per la sicurezza.** Contiene solo i file da mostrare al browser; i file `worker.js`, `schema.sql` e le impostazioni non devono essere pubblicati come asset del sito.
+**Attenzione:** metti il contenuto di questa cartella nella radice del repository GitHub, non in una sottocartella.
 
-## Installazione
+## Database D1
+1. In Cloudflare > Workers & Pages > D1 crea un database `vetrostudio-db`.
+2. Nella console D1 importa/esegui il contenuto di `schema.sql` (in alternativa da terminale `npx wrangler d1 execute vetrostudio-db --remote --file=./schema.sql`).
+3. In Workers & Pages > il tuo progetto Pages > Settings > Bindings aggiungi D1 database binding chiamato **DB** collegato al database `vetrostudio-db`. Configura sia Production sia Preview se necessarie.
+4. In Settings > Variables and Secrets configura un segreto **BOOTSTRAP_TOKEN** (valore privato scelto da te). Non pubblicarlo nel repository.
+5. Ridistribuisci il progetto (Redeploy) per applicare binding e variabili.
+6. Apri `/api/health` e verifica la risposta JSON `ok:true`; `/api/setup-status` deve rispondere dopo il collegamento D1.
+7. Apri il sito e crea il SUPER ADMIN usando il token di installazione.
 
-1. Installa Node.js 20+ e apri un terminale nella cartella estratta.
-2. Esegui `npm install` e `npx wrangler login`.
-3. Crea D1: `npx wrangler d1 create vetrostudio-db`.
-4. Copia il database ID nel campo `database_id` di `wrangler.toml`.
-5. Inizializza il database: `npm run db:remote`.
-6. Pubblica il Worker e il sito: `npm run deploy`.
-7. Imposta il token iniziale: `npx wrangler secret put BOOTSTRAP_TOKEN`.
-8. Apri l'URL del deploy e usa il token per creare il primo SUPER ADMIN. Poi dal pannello crea vetrerie e gestisci gli abbonamenti manualmente.
-
-Per provare in locale: `npm run db:local` e `npm run dev`. Per il bootstrap locale configura `BOOTSTRAP_TOKEN` in un file `.dev.vars`, che **non devi pubblicare né includere nel repository**.
-
-Questa applicazione usa **Cloudflare Workers + D1**, non la sola funzione di upload statico di Cloudflare Pages. L'uso locale e remoto di D1 è separato.
-
-## Stato delle funzionalità
-
-La riorganizzazione mantiene lo stesso codice della versione precedente: autenticazione, tenant separati, CRUD di clienti/listini/progetti/ticket, progetti con revisioni, configuratore 3D parametrico, preventivi/esportazioni e SUPER ADMIN. I pagamenti online rimangono da integrare.
-
-**Limiti invariati:** NON è ancora un CAD industriale completo o un SaaS collaudato per la vendita. Disegno libero e DXF sono parziali; upload persistenti di modelli GLB/GLTF, R2, onboarding completo, verifiche strutturali, backup automatici e pagamenti online richiedono altro sviluppo. I prezzi di esempio non sono prezzi certificati. Il primo collaudo Cloudflare sull'account di destinazione resta necessario.
-
-I segreti e le password non vanno salvati dentro file pubblici. Per la produzione occorre inoltre attivare misure contro tentativi ripetuti di login e test di sicurezza multi-tenant.
+## Importante
+- Non basta impostare `public` come output: senza la cartella `functions` l'interfaccia comparirà ma login, SUPER ADMIN, clienti e progetti non funzioneranno.
+- Non aggiungere `wrangler.toml` della versione Worker a questo progetto Pages.
+- Questa correzione riguarda l'integrazione Pages e non completa gli strumenti CAD industriali e le funzioni mancanti già indicate. Il deploy reale sul tuo account rimane da verificare.
+- Il codice non include ancora protezioni di produzione sufficienti contro abuso login, e va collaudato e rafforzato prima di venderlo.
