@@ -10,7 +10,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "vetrostudio-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "84a8f88d-1e34-45b2-b0a7-4dbefb53293a"
 
 [vars]
 APP_NAME = "VetroStudio 3D"
