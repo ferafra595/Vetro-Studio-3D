@@ -1,5 +1,5 @@
 name = "vetrostudio-3d"
-main = "src/worker.js"
+main = "worker.js"
 compatibility_date = "2026-09-01"
 
 [assets]
@@ -11,7 +11,6 @@ run_worker_first = ["/api/*"]
 binding = "DB"
 database_name = "vetrostudio-db"
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
-migrations_dir = "migrations"
 
 [vars]
 APP_NAME = "VetroStudio 3D"
