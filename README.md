@@ -20,10 +20,16 @@ Nel progetto Pages collegato a GitHub usa:
 1. In Cloudflare > Workers & Pages > D1 crea un database `vetrostudio-db`.
 2. Nella console D1 importa/esegui il contenuto di `schema.sql` (in alternativa da terminale `npx wrangler d1 execute vetrostudio-db --remote --file=./schema.sql`).
 3. In Workers & Pages > il tuo progetto Pages > Settings > Bindings aggiungi D1 database binding chiamato **DB** collegato al database `vetrostudio-db`. Configura sia Production sia Preview se necessarie.
-4. In Settings > Variables and Secrets configura un segreto **BOOTSTRAP_TOKEN** (valore privato scelto da te). Non pubblicarlo nel repository.
-5. Ridistribuisci il progetto (Redeploy) per applicare binding e variabili.
-6. Apri `/api/health` e verifica la risposta JSON `ok:true`; `/api/setup-status` deve rispondere dopo il collegamento D1.
-7. Apri il sito e crea il SUPER ADMIN usando il token di installazione.
+4. In **Settings → Variables and Secrets** del progetto Pages imposta i seguenti segreti per l'ambiente **Production**:
+   - `SUPER_ADMIN_EMAIL`: la tua email di accesso
+   - `SUPER_ADMIN_PASSWORD`: la tua password di accesso (salvala come **Secret**)
+   Non salvare queste credenziali su GitHub e non inserirle in `index.html`.
+5. Esegui un nuovo deployment per applicare binding e variabili.
+6. Apri `/api/health` e `/api/setup-status` per verificare che il backend risponda. `/api/setup-status` non espone le credenziali.
+7. Vai sulla home, accedi con email e password configurate su Cloudflare. Al **primo login** il backend crea il record SUPER ADMIN nel database automaticamente. Nessuna schermata pubblica di installazione.
+8. Le vetrerie usano la stessa schermata di login; il SUPER ADMIN crea credenziali delle vetrerie dal pannello.
+
+Nota: i segreti di Cloudflare vanno protetti; aggiungi rate limiting al login e MFA/Cloudflare Access per l'area amministrativa prima di vendere il sistema. Non usare una password facile solo per evitare requisiti minimi.
 
 ## Importante
 - Non basta impostare `public` come output: senza la cartella `functions` l'interfaccia comparirà ma login, SUPER ADMIN, clienti e progetti non funzioneranno.

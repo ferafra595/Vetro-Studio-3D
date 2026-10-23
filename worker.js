@@ -6,6 +6,7 @@ const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(
 const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
 const un64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function sha(s){return hex(await crypto.subtle.digest('SHA-256',bytes(s)))}
+async function safeEqual(a,b){const ha=await sha(a),hb=await sha(b);let delta=0;for(let i=0;i<ha.length;i++)delta|=ha.charCodeAt(i)^hb.charCodeAt(i);return delta===0}
 async function passhash(password,salt){let k=await crypto.subtle.importKey('raw',bytes(password),'PBKDF2',false,['deriveBits']);return hex(await crypto.subtle.deriveBits({name:'PBKDF2',salt:un64(salt),iterations:100000,hash:'SHA-256'},k,256))}
 async function setPass(pass){let salt=b64(crypto.getRandomValues(new Uint8Array(16)));return [salt,await passhash(pass,salt)]}
 function cookie(token){return `vs_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`}
@@ -18,15 +19,37 @@ const textv=(v,l=10000)=>String(v??'').slice(0,l);
 async function audit(env,u,action,details=''){await env.DB.prepare('INSERT INTO audit(id,actor_id,tenant_id,action,details) VALUES(?,?,?,?,?)').bind(uid(),u.id,u.tenant_id,action,textv(details,2000)).run()}
 async function handle(req,env){const url=new URL(req.url),p=url.pathname,method=req.method;if(!['GET','HEAD','OPTIONS'].includes(method)){const origin=req.headers.get('origin');if(origin&&new URL(origin).host!==url.host)return fail(403,'Origine non autorizzata')} if(method==='OPTIONS')return new Response(null,{status:204});
 if(p==='/api/health')return json({ok:true,service:'VetroStudio 3D',time:iso()});
-if(p==='/api/setup-status'){const r=await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='superadmin'").first();return json({needsSetup:r.n===0})}
-if(p==='/api/bootstrap'&&method==='POST'){const existing=await env.DB.prepare("SELECT COUNT(*) n FROM users WHERE role='superadmin'").first();if(existing.n)return fail(409,'SUPER ADMIN già creato');if(!env.BOOTSTRAP_TOKEN)return fail(503,'Configura prima il segreto BOOTSTRAP_TOKEN in Cloudflare');const x=await parse(req);if(x.token!==env.BOOTSTRAP_TOKEN)return fail(403,'Token installazione non valido');if(!String(x.email||'').includes('@')||!String(x.password||''))return fail(400,'Email e password richieste');let [salt,hash]=await setPass(x.password);const id=uid();await env.DB.prepare("INSERT INTO users(id,email,password_salt,password_hash,role) VALUES(?,?,?,?,'superadmin')").bind(id,x.email.toLowerCase(),salt,hash).run();return json({ok:true})}
+if(p==='/api/setup-status')return json({needsSetup:false,adminConfigured:!!(env.SUPER_ADMIN_EMAIL&&env.SUPER_ADMIN_PASSWORD)});
+if(p==='/api/bootstrap')return fail(404,'Endpoint disattivato');
 if(p==='/api/signup-request'&&method==='POST'){const x=await parse(req);if(!String(x.email||'').includes('@')||!String(x.company||'').trim())return fail(400,'Ragione sociale ed email valide sono obbligatorie');await env.DB.prepare('INSERT INTO signup_requests(id,company,email,vat,phone,note) VALUES(?,?,?,?,?,?)').bind(uid(),textv(x.company,160),textv(x.email,200),textv(x.vat,60),textv(x.phone,80),textv(x.note,500)).run();return json({ok:true,message:'Richiesta inviata'})}
-if(p==='/api/login'&&method==='POST'){const x=await parse(req);if(!x.email||!x.password)return fail(400,'Credenziali richieste');const row=await env.DB.prepare('SELECT * FROM users WHERE email=?').bind(String(x.email).toLowerCase()).first();if(!row||!row.active)return fail(401,'Credenziali non valide');if(await passhash(x.password,row.password_salt)!==row.password_hash)return fail(401,'Credenziali non valide');if(row.tenant_id){const t=await env.DB.prepare('SELECT status FROM tenants WHERE id=?').bind(row.tenant_id).first();if(!t||t.status==='blocked')return fail(403,'Account sospeso: contatta il supporto')}return await begin(req,env,row)}
+if(p==='/api/login'&&method==='POST'){
+ const x=await parse(req),email=String(x.email||'').trim().toLowerCase(),password=String(x.password||'');
+ if(!email||!password)return fail(400,'Credenziali richieste');
+ const adminEmail=String(env.SUPER_ADMIN_EMAIL||'').trim().toLowerCase();
+ if(adminEmail&&email===adminEmail){
+  if(!env.SUPER_ADMIN_PASSWORD||!(await safeEqual(password,String(env.SUPER_ADMIN_PASSWORD))))return fail(401,'Credenziali non valide');
+  let row=await env.DB.prepare("SELECT * FROM users WHERE role='superadmin' LIMIT 1").first();
+  if(row){
+   if(row.email!==adminEmail){const occupied=await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(adminEmail).first();if(occupied)return fail(409,'Email già assegnata a un account vetreria');await env.DB.prepare('UPDATE users SET email=?,active=1 WHERE id=?').bind(adminEmail,row.id).run();row.email=adminEmail}
+  }else{
+   const occupied=await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(adminEmail).first();if(occupied)return fail(409,'Email già assegnata a un account vetreria');
+   const id=uid(),[salt,hash]=await setPass(hex(crypto.getRandomValues(new Uint8Array(32))));
+   await env.DB.prepare("INSERT INTO users(id,email,password_salt,password_hash,role,active) VALUES(?,?,?,?, 'superadmin',1)").bind(id,adminEmail,salt,hash).run();row={id,email:adminEmail,role:'superadmin',tenant_id:null};
+  }
+  return await begin(req,env,row);
+ }
+ const row=await env.DB.prepare("SELECT * FROM users WHERE email=? AND role='tenant'").bind(email).first();
+ if(!row||!row.active)return fail(401,'Credenziali non valide');
+ if(!(await safeEqual(await passhash(password,row.password_salt),row.password_hash)))return fail(401,'Credenziali non valide');
+ const t=await env.DB.prepare('SELECT status FROM tenants WHERE id=?').bind(row.tenant_id).first();
+ if(!t||t.status==='blocked')return fail(403,'Account sospeso: contatta il supporto');
+ return await begin(req,env,row);
+}
 const u=await auth(req,env);if(!u)return fail(401,'Sessione non valida. Effettua l’accesso.');
 if(u.role==='tenant'&&u.tenant_status==='paused'&&!['GET','HEAD'].includes(method)&&!['/api/logout','/api/account/password'].includes(p))return fail(403,'Account in sola lettura: abbonamento sospeso');
 if(p==='/api/me')return json({id:u.id,email:u.email,role:u.role,tenantId:u.tenant_id,tenantName:u.tenant_name,planId:u.plan_id,tenantStatus:u.tenant_status,endsAt:u.ends_at});
 if(p==='/api/logout'&&method==='POST'){const token=req.headers.get('cookie')?.match(/vs_session=([^;]+)/)?.[1];if(token)await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await sha(token)).run();return json({ok:true},200,{'set-cookie':'vs_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax'})}
-if(p==='/api/account/password'&&method==='POST'){const x=await parse(req);if(!x.current||!x.next)return fail(400,'Compila entrambi i campi');const row=await env.DB.prepare('SELECT password_salt,password_hash FROM users WHERE id=?').bind(u.id).first();if(await passhash(x.current,row.password_salt)!==row.password_hash)return fail(403,'Password attuale errata');const [salt,hash]=await setPass(x.next);await env.DB.prepare('UPDATE users SET password_salt=?,password_hash=? WHERE id=?').bind(salt,hash,u.id).run();await audit(env,u,'password.changed');return json({ok:true})}
+if(p==='/api/account/password'&&method==='POST'){if(u.role==='superadmin')return fail(403,'Modifica le credenziali SUPER ADMIN dai segreti Cloudflare');const x=await parse(req);if(!x.current||!x.next)return fail(400,'Compila entrambi i campi');const row=await env.DB.prepare('SELECT password_salt,password_hash FROM users WHERE id=?').bind(u.id).first();if(await passhash(x.current,row.password_salt)!==row.password_hash)return fail(403,'Password attuale errata');const [salt,hash]=await setPass(x.next);await env.DB.prepare('UPDATE users SET password_salt=?,password_hash=? WHERE id=?').bind(salt,hash,u.id).run();await audit(env,u,'password.changed');return json({ok:true})}
 if(p==='/api/signup-requests'&&u.role==='superadmin'&&method==='GET')return json({items:(await env.DB.prepare('SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 300').all()).results});
 const signMatch=p.match(/^\/api\/signup-requests\/([\w-]+)$/);if(signMatch&&u.role==='superadmin'&&method==='PATCH'){const x=await parse(req);if(!['pending','reviewed','rejected'].includes(x.status))return fail(400,'Stato non valido');await env.DB.prepare('UPDATE signup_requests SET status=? WHERE id=?').bind(x.status,signMatch[1]).run();return json({ok:true})}
 if(p==='/api/plans'&&method==='GET')return json({items:(await env.DB.prepare('SELECT * FROM plans ORDER BY created_at DESC').all()).results});
