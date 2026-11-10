@@ -112,8 +112,13 @@ function tessellateProfile(points,bulges=[],tolerance=.2){
  if(!Array.isArray(points)||points.length<3)throw Error('Contorno non valido');
  const out=[];for(let i=0;i<points.length;i++){
   const pts=sampleArc(points[i],points[(i+1)%points.length],Number(bulges[i]||0),tolerance);
-  out.push(...pts.slice(0,-1));
- }return out;
+  for(const p of pts.slice(0,-1)){
+   // Elimina soltanto microsegmenti dovuti alla tassellazione di archi.
+   // I vertici originali non vengono modificati: restano parametrici.
+   if(out.length&&dist(out[out.length-1],p)<0.11)continue;
+   out.push(p);
+  }
+ }if(out.length>3&&dist(out[0],out[out.length-1])<0.11)out.pop();return out;
 }
 function bulgeFromRadius(a,b,radius,side=1){
  const chord=dist(a,b);if(!finite(radius)||radius<chord/2)throw Error('Raggio inferiore a metà della corda');
