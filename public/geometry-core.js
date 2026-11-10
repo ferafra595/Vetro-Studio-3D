@@ -22,6 +22,13 @@ function pointInside(p,poly){let hit=false;for(let i=0,j=poly.length-1;i<poly.le
  if(((a[1]>p[1])!==(b[1]>p[1]))&&(p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0]))hit=!hit;
 }return hit}
 function distanceToSegment(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l2=dx*dx+dy*dy;if(l2<EPS)return dist(p,a);const t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2));return dist(p,[a[0]+t*dx,a[1]+t*dy])}
+function slotOutline(h,segments=32){
+ const r=h.r,L=h.length,a=(h.angle||0)*Math.PI/180,sep=Math.max(0,L-2*r),ux=Math.cos(a),uy=Math.sin(a);
+ const c1=[h.x-ux*sep/2,h.y-uy*sep/2],c2=[h.x+ux*sep/2,h.y+uy*sep/2],out=[];
+ for(let i=0;i<=segments/2;i++){const t=a-Math.PI/2+Math.PI*i/(segments/2);out.push([c2[0]+r*Math.cos(t),c2[1]+r*Math.sin(t)])}
+ for(let i=0;i<=segments/2;i++){const t=a+Math.PI/2+Math.PI*i/(segments/2);out.push([c1[0]+r*Math.cos(t),c1[1]+r*Math.sin(t)])}
+ return out;
+}
 function validate(points,holes=[]){
  if(!Array.isArray(points)||points.length<3)return {ok:false,error:'La sagoma richiede almeno tre vertici'};
  if(points.length>300)return {ok:false,error:'La sagoma supera il limite di 300 vertici'};
@@ -33,17 +40,19 @@ function validate(points,holes=[]){
    if(segmentsIntersect(points[i],points[(i+1)%n],points[j],points[(j+1)%n]))return {ok:false,error:`Contorno auto-intersecante tra lati ${i+1} e ${j+1}`};
  }
  const area=Math.abs(signedArea(points));if(area<1)return {ok:false,error:'Area della sagoma insufficiente'};
- const safeHoles=[];
+ const safeHoles=[],shapes=[];
  for(let i=0;i<holes.length;i++){
   const h=holes[i],p=[h.x,h.y],r=h.r;
   if(!finite(h.x)||!finite(h.y)||!finite(r)||r<=0)return {ok:false,error:`Foro ${i+1}: coordinate o raggio non validi`};
-  if(!pointInside(p,points))return {ok:false,error:`Foro ${i+1} esterno alla lastra`};
-  for(let k=0;k<n;k++)if(distanceToSegment(p,points[k],points[(k+1)%n])<=r+EPS)return {ok:false,error:`Foro ${i+1} interseca o tocca il bordo`};
-  for(const other of safeHoles)if(Math.hypot(h.x-other.x,h.y-other.y)<=r+other.r+EPS)return {ok:false,error:`Foro ${i+1} si sovrappone a un altro foro`};
-  safeHoles.push(h);
+  if(h.type==='slot'&&(!finite(h.length)||h.length<=2*r||!finite(h.angle||0)))return {ok:false,error:`Asola ${i+1}: lunghezza insufficiente`};
+  const outline=h.type==='slot'?slotOutline(h):Array.from({length:48},(_,j)=>[h.x+r*Math.cos(2*Math.PI*j/48),h.y+r*Math.sin(2*Math.PI*j/48)]);
+  for(const q of outline){if(!pointInside(q,points))return {ok:false,error:`Foro/asola ${i+1} esterno alla lastra`};for(let k=0;k<n;k++)if(distanceToSegment(q,points[k],points[(k+1)%n])<.01)return {ok:false,error:`Foro/asola ${i+1} tocca il bordo`}}
+  for(const previous of shapes){if(outline.some(q=>pointInside(q,previous))||previous.some(q=>pointInside(q,outline)))return {ok:false,error:`Fori/asole ${i+1}: sovrapposizione`};
+   for(let a=0;a<outline.length;a++)for(let b=0;b<previous.length;b++)if(segmentsIntersect(outline[a],outline[(a+1)%outline.length],previous[b],previous[(b+1)%previous.length]))return {ok:false,error:`Fori/asole ${i+1}: intersezione`};}
+  safeHoles.push(h);shapes.push(outline);
  }
  const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
- return {ok:true,areaMm2:area-holes.reduce((a,h)=>a+Math.PI*h.r*h.r,0),outlineMm2:area,bounds:{minX,minY,maxX,maxY,width:maxX-minX,height:maxY-minY},winding:signedArea(points)>0?'ccw':'cw'};
+ return {ok:true,areaMm2:area-holes.reduce((a,h)=>a+Math.PI*h.r*h.r+(h.type==='slot'?2*h.r*(h.length-2*h.r):0),0),outlineMm2:area,bounds:{minX,minY,maxX,maxY,width:maxX-minX,height:maxY-minY},winding:signedArea(points)>0?'ccw':'cw'};
 }
 function normalize(points,holes=[]){const v=validate(points,holes);if(!v.ok)return v;const {minX,minY,width,height}=v.bounds;
  return {...v,points:points.map(p=>[+(p[0]-minX).toFixed(3),+(p[1]-minY).toFixed(3)]),holes:holes.map(h=>({...h,x:+(h.x-minX).toFixed(3),y:+(h.y-minY).toFixed(3)})),width,height};
@@ -56,5 +65,5 @@ function snapPoint(point,otherPolygons,tolerance=12){let best={point:[...point],
   if(len2>EPS){const t=Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/len2));tryIt([a[0]+t*dx,a[1]+t*dy],'bordo')}
  }}return best;
 }
-return Object.freeze({signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint});
+return Object.freeze({signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline});
 });
