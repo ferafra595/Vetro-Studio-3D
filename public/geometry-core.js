@@ -65,5 +65,24 @@ function snapPoint(point,otherPolygons,tolerance=12){let best={point:[...point],
   if(len2>EPS){const t=Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/len2));tryIt([a[0]+t*dx,a[1]+t*dy],'bordo')}
  }}return best;
 }
-return Object.freeze({signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline});
+// Intersections are geometric guide points; parallel/collinear infinite lines are ignored.
+function segmentIntersectionPoint(a,b,c,d){
+ const ux=b[0]-a[0],uy=b[1]-a[1],vx=d[0]-c[0],vy=d[1]-c[1];
+ const det=ux*vy-uy*vx;if(Math.abs(det)<EPS)return null;
+ const t=((c[0]-a[0])*vy-(c[1]-a[1])*vx)/det;
+ const u=((c[0]-a[0])*uy-(c[1]-a[1])*ux)/det;
+ if(t< -EPS||t>1+EPS||u< -EPS||u>1+EPS)return null;
+ return [a[0]+t*ux,a[1]+t*uy];
+}
+function projection(p,a,b){const vx=b[0]-a[0],vy=b[1]-a[1],d=vx*vx+vy*vy;if(d<EPS)return [...a];const t=Math.max(0,Math.min(1,((p[0]-a[0])*vx+(p[1]-a[1])*vy)/d));return [a[0]+t*vx,a[1]+t*vy]}
+function snapCandidates(p,poly,holes=[]){
+ const c=[];const add=(point,type)=>c.push({point,type,distance:dist(p,point)});
+ for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length];add(a,'vertice');add([(a[0]+b[0])/2,(a[1]+b[1])/2],'punto medio');add(projection(p,a,b),'perpendicolare/bordo')}
+ for(let i=0;i<poly.length;i++)for(let j=i+2;j<poly.length;j++){if(i===0&&j===poly.length-1)continue;const q=segmentIntersectionPoint(poly[i],poly[(i+1)%poly.length],poly[j],poly[(j+1)%poly.length]);if(q)add(q,'intersezione')}
+ for(const h of holes)add([h.x,h.y],'centro foro');
+ return c.sort((a,b)=>a.distance-b.distance);
+}
+function alignEdge(points,index,axis){const out=points.map(p=>[...p]),j=(index+1)%out.length;if(axis==='horizontal')out[j][1]=out[index][1];else if(axis==='vertical')out[j][0]=out[index][0];else throw Error('Vincolo sconosciuto');return out}
+function chamfer(points,index,cut){if(!(cut>0))throw Error('Smusso non valido');const n=points.length;if(n<3)throw Error('Sagoma non valida');const c=points[index],a=points[(index+n-1)%n],b=points[(index+1)%n];let da=dist(a,c),db=dist(c,b);if(cut>=Math.min(da,db))throw Error('Smusso più grande del lato');let p=[c[0]+(a[0]-c[0])*cut/da,c[1]+(a[1]-c[1])*cut/da],q=[c[0]+(b[0]-c[0])*cut/db,c[1]+(b[1]-c[1])*cut/db];return [...points.slice(0,index),p,q,...points.slice(index+1)]}
+return Object.freeze({signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline,projection,snapCandidates,segmentIntersectionPoint,alignEdge,chamfer});
 });
