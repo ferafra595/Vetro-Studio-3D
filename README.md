@@ -1,22 +1,19 @@
-# VetroStudio 3D — progetto unificato
+# VetroStudio CAD 2D — correzione archi e barra strumenti
 
-Questo archivio contiene **un solo modulo per il configuratore**, `public/studio.js`. Non caricare o mantenere i vecchi `designer-v2...v6`, `renderer-v7...v9`, `studio-v10`, `stair-fix-v12`, `stair-engine-v13`: sono stati rimossi perché sovrascrivevano funzioni tra loro.
+Sostituisci in GitHub soltanto:
+- `public/cad2d.js`
+- `public/geometry-core.js`
 
-## Pubblicazione Cloudflare Pages
+Non cambiare database D1, login, SUPER ADMIN o altri file.
 
-- Repository: cartella radice di questo archivio.
-- Framework: `None`.
-- Build command: `exit 0`.
-- Output: `public`.
-- Pages Functions: la cartella `functions` alla radice.
-- Database D1: binding `DB` sul progetto Pages, con le tabelle in `schema.sql`.
-- Credenziali SUPER ADMIN: Secrets Cloudflare `SUPER_ADMIN_EMAIL` e `SUPER_ADMIN_PASSWORD`.
-- Pagamenti online: non collegati.
+## Modifiche
+- Le forme rapide **Arco superiore**, **Angoli arrotondati** e **Cerchio** vengono generate con segmenti parametrici (bulge) invece di decine di vertici di controllo.
+- La tassellazione per la visualizzazione scarta microsegmenti numericamente duplicati (senza cambiare la geometria parametrica originale).
+- Le quote dei lati piccoli non vengono ripetute una sopra l'altra; gli indici dei punti sono ridotti sulle sagome già molto dense.
+- Passo griglia, Snap e Griglia sono riuniti in un gruppo di controlli chiaro e leggibile.
 
-**Se si aggiorna da una versione precedente, eliminare anche da GitHub i vecchi file di configuratore non più usati**, non soltanto caricare quelli nuovi. `app.js` e le funzioni server mantengono gli accessi e il gestionale esistenti.
+## Per correggere la sagoma già deformata
+Seleziona `Arco superiore` dalle forme rapide: questo **rigenera il contorno** e rimuove eventuali fori, quindi conserva prima una copia del progetto se le lavorazioni esistenti ti servono.
 
-## Limiti da conoscere
-
-Le scale e i parapetti sono modelli parametrizzati per la visualizzazione e la preventivazione preliminare, non calcoli strutturali certificati. Fori, fissaggi, dimensionamento, carichi, norme e tolleranze richiedono verifica tecnica prima della produzione. La galleria usa geometrie generate nel browser, non modelli di prodotto certificati. Le finiture del motore unificato sono materiali procedurali semplificati, non texture fotografiche PBR.
-
-L'autosalvataggio si attiva **dopo** che il progetto ha un ID nel database (primo salvataggio manuale). I PDF provengono dalla funzione di stampa del browser. Three.js richiede una connessione per i CDN indicati in `index.html`.
+## Limiti
+Le forme predefinite usano archi parametrici; il CAD non è ancora certificato per produzione CNC e resta necessario verificare le lavorazioni rispetto ai dati tecnici di fornitore e materiale.
