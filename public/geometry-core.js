@@ -84,5 +84,41 @@ function snapCandidates(p,poly,holes=[]){
 }
 function alignEdge(points,index,axis){const out=points.map(p=>[...p]),j=(index+1)%out.length;if(axis==='horizontal')out[j][1]=out[index][1];else if(axis==='vertical')out[j][0]=out[index][0];else throw Error('Vincolo sconosciuto');return out}
 function chamfer(points,index,cut){if(!(cut>0))throw Error('Smusso non valido');const n=points.length;if(n<3)throw Error('Sagoma non valida');const c=points[index],a=points[(index+n-1)%n],b=points[(index+1)%n];let da=dist(a,c),db=dist(c,b);if(cut>=Math.min(da,db))throw Error('Smusso più grande del lato');let p=[c[0]+(a[0]-c[0])*cut/da,c[1]+(a[1]-c[1])*cut/da],q=[c[0]+(b[0]-c[0])*cut/db,c[1]+(b[1]-c[1])*cut/db];return [...points.slice(0,index),p,q,...points.slice(index+1)]}
-return Object.freeze({signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline,projection,snapCandidates,segmentIntersectionPoint,alignEdge,chamfer});
+
+// Circular arcs are stored as DXF-style dimensionless bulges on an edge.
+// bulge = tan(signed central angle / 4); zero means straight line.
+function arcGeometry(a,b,bulge){
+ if(!finite(bulge)||Math.abs(bulge)<1e-9)return null;
+ const chord=dist(a,b);if(chord<.1)throw Error('Arco: estremi coincidenti');
+ if(Math.abs(bulge)>2.4)throw Error('Arco oltre il limite di 269°');
+ const angle=4*Math.atan(bulge),radius=chord*(1+bulge*bulge)/(4*Math.abs(bulge));
+ const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+ const nx=-(b[1]-a[1])/chord,ny=(b[0]-a[0])/chord;
+ const offset=chord*(1-bulge*bulge)/(4*bulge);
+ const center=[mx+nx*offset,my+ny*offset];
+ return {center,radius,angle,start:Math.atan2(a[1]-center[1],a[0]-center[0]),bulge};
+}
+function sampleArc(a,b,bulge,tolerance=.2){
+ const arc=arcGeometry(a,b,bulge);if(!arc)return [a,b];
+ const step=2*Math.acos(Math.max(-1,Math.min(1,1-Math.max(.001,tolerance)/arc.radius)));
+ const count=Math.min(120,Math.max(2,Math.ceil(Math.abs(arc.angle)/Math.max(.025,step))));
+ const pts=[];for(let i=0;i<=count;i++){
+  if(i===0){pts.push([...a]);continue}if(i===count){pts.push([...b]);continue}
+  const t=arc.start+arc.angle*i/count;
+  pts.push([arc.center[0]+arc.radius*Math.cos(t),arc.center[1]+arc.radius*Math.sin(t)]);
+ }return pts;
+}
+function tessellateProfile(points,bulges=[],tolerance=.2){
+ if(!Array.isArray(points)||points.length<3)throw Error('Contorno non valido');
+ const out=[];for(let i=0;i<points.length;i++){
+  const pts=sampleArc(points[i],points[(i+1)%points.length],Number(bulges[i]||0),tolerance);
+  out.push(...pts.slice(0,-1));
+ }return out;
+}
+function bulgeFromRadius(a,b,radius,side=1){
+ const chord=dist(a,b);if(!finite(radius)||radius<chord/2)throw Error('Raggio inferiore a metà della corda');
+ const theta=2*Math.asin(chord/(2*radius));return Math.tan(theta/4)*(side>=0?1:-1);
+}
+
+return Object.freeze({arcGeometry,sampleArc,tessellateProfile,bulgeFromRadius,signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline,projection,snapCandidates,segmentIntersectionPoint,alignEdge,chamfer});
 });

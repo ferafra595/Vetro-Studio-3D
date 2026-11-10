@@ -185,6 +185,12 @@ function edit(id,key,val){
  if((key==='w'||key==='h')&&o.shape?.length>=3){
   const idx=key==='w'?0:1,ratio=value/Math.max(1,oldValue);
   o.shape=o.shape.map(p=>p.map((v,i)=>i===idx?mm(v*ratio):v));
+  if(o.cadProfile?.points){
+   o.cadProfile.points=o.cadProfile.points.map(p=>p.map((v,i)=>i===idx?mm(v*ratio):v));
+   const sampled=window.VSGeometry.tessellateProfile(o.cadProfile.points,o.cadProfile.bulges||[],.35);
+   const check=window.VSGeometry.validate(sampled,o.holes||[]);
+   if(check.ok)o.shape=sampled;else delete o.cadProfile;
+  }
   o.holes=(o.holes||[]).map(h=>({...h,[idx===0?'x':'y']:mm(h[idx===0?'x':'y']*ratio)}));
  }
  if(['x','y','z'].includes(key)&&['glass','mirror'].includes(o.kind))for(const item of model().objects){if(item.attachTo===o.id)item[key]=mm(N(item[key])+(value-N(oldValue)))}
@@ -265,10 +271,12 @@ function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-
 function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
 window.VSCADBridge={
  selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));return o?structuredClone(o):null},
- commit(outline,holes){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
+ commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
  const r=window.VSGeometry.normalize(outline,holes);if(!r.ok)return r;
  remember();const left=o.x-o.w/2,bottom=o.y-o.h/2;
  o.x=mm(left+r.bounds.minX+r.width/2);o.y=mm(bottom+r.bounds.minY+r.height/2);o.w=mm(r.width);o.h=mm(r.height);o.shape=r.points;o.holes=r.holes;
+ if(profile&&Array.isArray(profile.points)){o.cadProfile={points:profile.points.map(v=>[v[0]-r.bounds.minX,v[1]-r.bounds.minY]),bulges:[...(profile.bulges||[])],constraints:{...(profile.constraints||{})}}}
+ else delete o.cadProfile;
  refresh(true);return {ok:true};},
 };
 window.VS={choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
@@ -279,7 +287,11 @@ exportDXF=function(){const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70'
  for(const [i,o] of model().objects.filter(x=>['glass','mirror'].includes(x.kind)).entries()){
   const layer='LASTRA_'+(i+1),pts=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];
   if(!window.VSGeometry.validate(pts,o.holes||[]).ok){toast('Esportazione DXF bloccata: geometria non valida '+o.name);return}
-  for(let j=0;j<pts.length;j++)line(pts[j],pts[(j+1)%pts.length],layer);
+  if(o.cadProfile?.points?.length>=3&&o.cadProfile.bulges?.some(b=>Math.abs(b||0)>1e-9)){
+   const profile=o.cadProfile;
+   rows.push('0','LWPOLYLINE','8',layer,'90',String(profile.points.length),'70','1');
+   for(let j=0;j<profile.points.length;j++)rows.push('10',String(profile.points[j][0]),'20',String(profile.points[j][1]),'42',String(profile.bulges[j]||0));
+  }else for(let j=0;j<pts.length;j++)line(pts[j],pts[(j+1)%pts.length],layer);
   for(const h of o.holes||[]){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}
  }
  rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+'.dxf',rows.join('\n'),'application/dxf')};
