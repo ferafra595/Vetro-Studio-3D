@@ -1,28 +1,38 @@
-VETROSTUDIO 3D — PREVENTIVO VETRO / LISTINO PREZZI
+VetroStudio 3D — Miglioramenti branding, clienti e preventivo
 
-Copia i seguenti file nella directory public/ del repository GitHub:
-- app.js (sostituisce il precedente)
-- index.html (sostituisce il precedente)
-- preventivo-vetro.js (sostituisce il precedente)
+CONTENUTO DELLA ZIP
+- worker.js                -> sostituisci alla radice del repository
+- public/index.html        -> sostituisci
+- public/app.js            -> sostituisci
+- public/preventivo-vetro.js -> sostituisci
 
-Non modificare studio.js, cad2d.js, geometry-core.js, Pages Functions, D1 o SUPER ADMIN.
+NON MODIFICARE:
+- schema.sql, database Cloudflare D1 e le sue tabelle
+- funzioni di autenticazione Cloudflare e segreti SUPER ADMIN
+- studio.js, cad2d.js, geometry-core.js e relativi altri file
 
-NOVITÀ
-- Preventivo Vetro con parametri prodotto e prospetto/pianta 2D affiancati
-- Più configurazioni per preventivo, modificabili ed eliminabili
-- Modelli generici: lastra, scorrevole, impacchettabile, fissa, battente
-- Numero moduli, direzione, tipo vetro, finiture, struttura e accessori
-- Listino Preventivi in menu, prezzi individuali per ogni vetreria su D1
-- Valori predefiniti zero, non prezzi inventati
-- I prezzi del listino vengono congelati nelle configurazioni aggiunte
-- Stampa / Salva PDF dal browser
+NOVITA'
+1. PDF A4 impaginato con intestazione, dati aziendali, destinatario, tabella lavorazioni e riepilogo leggibile anche in stampa.
+2. Logo pannello e logo preventivo separati, entrambi opzionali (PNG/JPEG/WebP fino a 125 KB ciascuno).
+3. Colore pulsanti e colore menu laterale configurabili separatamente.
+4. Cliente esistente selezionabile per ID stabile; nella ricerca sono visibili telefono ed email per distinguere gli omonimi. Nuovo cliente con telefono e/o email per evitare la fusione automatica di schede con lo stesso nome.
+5. Colore struttura, guarnizioni e colore maniglie ora sono menu con opzioni predefinite, mantenendo le voci già salvate sui preventivi esistenti.
 
-IL LISTINO VIENE SALVATO COME ELEMENTO RISERVATO DEL CATALOGO
-(kind __vetrostudio_quote_prices) utilizzando le API già esistenti.
-Le altre vetrerie non possono accedervi, grazie alle restrizioni tenant già implementate lato server.
+NOTA DATI
+Le nuove preferenze si salvano nello stesso record JSON di tenant_preferences su D1, senza migrazioni.
+Le impostazioni precedenti 'logo' e 'color' sono lette come fallback, senza cancellarle.
+Le preferenze grafiche di una vetreria non alterano quelle delle altre.
 
-LIMITI
-- Prospetto e pianta sono schematici, non disegni di produzione.
-- Non sostituisce certificazioni dei sistemi scorrevoli o impacchettabili.
-- Il documento PDF è ottenuto tramite stampa del browser.
-- Eseguire test di integrazione sul deployment Cloudflare prima della commercializzazione.
+VERIFICA CONSIGLIATA DOPO DEPLOY
+- Impostazioni: carica logo pannello e logo preventivo diversi, scegli due colori e salva.
+- Preventivo: seleziona da elenco il cliente corretto tra due omonimi; verifica la scheda associata.
+- Nuovo cliente: inserisci nome e recapito e salva.
+- Prova le tre tendine e genera un PDF A4 (stampa a colori oppure in bianco e nero).
+- Controlla l'apertura di un preventivo già salvato e l'accesso al gestionale.
+
+TEST ESEGUITI
+- Controllo sintattico JS di worker.js, app.js, preventivo-vetro.js
+- Test Chromium locale con API simulate per impostazioni, clienti omonimi, tendine, anteprima preventivo e PDF
+- Verifica visiva della prima pagina del PDF e del riepilogo
+
+NON ESEGUITO: collaudo remoto del deployment Cloudflare Pages con D1 reale.

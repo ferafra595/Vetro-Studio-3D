@@ -65,17 +65,17 @@ if(p==='/api/tenant/preferences'&&u.role==='tenant'){
   return json({data:x?JSON.parse(x.data):{}});
  }
  if(method==='PATCH'){
-  const x=await parse(req); const accepted=['name','vat','phone','address','email','website','instagram','facebook','linkedin','city','zip','province','pec','sdi','logo','color'];
+  const x=await parse(req); const accepted=['name','vat','phone','address','email','website','instagram','facebook','linkedin','city','zip','province','pec','sdi','logo','color','logoPanel','logoQuote','buttonColor','sidebarColor'];
   const old=await env.DB.prepare('SELECT data FROM tenant_preferences WHERE tenant_id=?').bind(u.tenant_id).first();
   let data=old?JSON.parse(old.data):{};
   for(const k of accepted)if(Object.hasOwn(x,k)){
-   if(k==='logo'){
-    const v=String(x.logo||'');
+   if(['logo','logoPanel','logoQuote'].includes(k)){
+    const v=String(x[k]||'');
     if(v.length>180000||v&&!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v))return fail(400,'Logo non valido. Usa PNG, JPEG o WebP inferiori a circa 130 KB.');
-    data.logo=v;
-   }else if(k==='color'){
-    if(!/^#[0-9a-fA-F]{6}$/.test(String(x.color)))return fail(400,'Colore non valido');
-    data.color=x.color;
+    data[k]=v;
+   }else if(['color','buttonColor','sidebarColor'].includes(k)){
+    if(!/^#[0-9a-fA-F]{6}$/.test(String(x[k])))return fail(400,'Colore non valido');
+    data[k]=x[k];
    }else data[k]=textv(x[k],k==='address'?400:180);
   }
   await env.DB.prepare(`INSERT INTO tenant_preferences(tenant_id,data) VALUES(?,?) ON CONFLICT(tenant_id) DO UPDATE SET data=excluded.data,updated_at=CURRENT_TIMESTAMP`).bind(u.tenant_id,JSON.stringify(data)).run();
@@ -85,14 +85,19 @@ if(p==='/api/tenant/preferences'&&u.role==='tenant'){
 }
 // Ricerca o creazione cliente: il nome libero viene sempre trasformato in un cliente reale.
 if(p==='/api/clients/resolve'&&method==='POST'&&u.role==='tenant'){
- const x=await parse(req),name=String(x.name||'').trim().replace(/\s+/g,' ');
+ const x=await parse(req);const name=String(x.name||'').trim(),email=String(x.email||'').trim().toLowerCase(),phone=String(x.phone||'').replace(/[^0-9+]/g,'');
+ if(x.id){const item=await env.DB.prepare('SELECT * FROM clients WHERE id=? AND tenant_id=?').bind(String(x.id),u.tenant_id).first();return item?json({ok:true,item}):fail(404,'Cliente non trovato')}
  if(name.length<2||name.length>160)return fail(400,'Inserisci un nome cliente valido (2–160 caratteri)');
- let found=await env.DB.prepare('SELECT * FROM clients WHERE tenant_id=? AND lower(trim(name))=lower(?) ORDER BY created_at LIMIT 1').bind(u.tenant_id,name).first();
- if(found)return json({item:found,created:false});
- const id=uid();
- await env.DB.prepare('INSERT INTO clients(id,tenant_id,name,email,phone,address,notes) VALUES(?,?,?,?,?,?,?)').bind(id,u.tenant_id,name,textv(x.email,200),textv(x.phone,80),textv(x.address,400),'').run();
- await audit(env,u,'client.create',id);found=await env.DB.prepare('SELECT * FROM clients WHERE id=? AND tenant_id=?').bind(id,u.tenant_id).first();
- return json({item:found,created:true});
+ const rows=(await env.DB.prepare('SELECT * FROM clients WHERE tenant_id=? AND lower(trim(name))=lower(?) LIMIT 30').bind(u.tenant_id,name).all()).results;
+ const normalizePhone=v=>String(v||'').replace(/[^0-9+]/g,'');
+ let found=email?rows.find(c=>String(c.email||'').trim().toLowerCase()===email):null;
+ if(!found&&phone)found=rows.find(c=>normalizePhone(c.phone)===phone);
+ if(!found&&rows.length===1&&!email&&!phone)found=rows[0];
+ if(found)return json({ok:true,item:found});
+ if(rows.length&&!email&&!phone)return fail(409,'Esistono clienti con questo nome: seleziona quello corretto oppure inserisci telefono o email per distinguere un nuovo cliente.');
+ if(rows.length&&(email||phone)&&rows.some(c=>(email&&String(c.email||'').toLowerCase()===email)||(phone&&normalizePhone(c.phone)===phone)))return fail(409,'Contatto già registrato: seleziona la scheda cliente.');
+ const id=uid();await env.DB.prepare('INSERT INTO clients(id,tenant_id,name,email,phone,address,notes) VALUES(?,?,?,?,?,?,?)').bind(id,u.tenant_id,name,textv(email,200),textv(phone,80),textv(x.address,400),'').run();await audit(env,u,'client.create',id);
+ const item=await env.DB.prepare('SELECT * FROM clients WHERE id=? AND tenant_id=?').bind(id,u.tenant_id).first();return json({ok:true,item});
 }
 // Vista client-centric: preventivi e progetti associati allo stesso cliente.
 const cdetail=p.match(/^\/api\/clients\/([\w-]+)\/records$/);
