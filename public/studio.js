@@ -92,7 +92,7 @@ function choose(cat,code){const entry=catalog[cat]?.find(t=>t[0]===code);if(!ent
 function blank(){remember();model().objects=[];model().studio={category:'libero',template:null,settings:{}};U.selected=null;refresh(true)}
 function refresh(modelChanged=false){if(modelChanged)drawScene();renderSidebar();renderProps();updatePricing();updateTitle();queueAutosave()}
 function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=setTimeout(async()=>{if(U.loading||S.view!=='designer')return;try{U.loading=true;await saveCurrent()}catch(e){console.warn('Autosave:',e)}finally{U.loading=false}},5000)}
-function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino. Tre finiture moderne, ognuna modificabile.</p><div class="vsModels">${[['concrete','01 · Cemento architettonico'],['stone','02 · Pietra naturale'],['wood','03 · Rovere contemporaneo']].map(([k,l])=>`<button class="vsModel" onclick="VS.finish('${k}')">${l}</button>`).join('')}</div><button class="btn" onclick="VS.applyModernScene()">Applica design moderno all’ambiente</button>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
+function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p><button class="btn primary" style="width:100%;margin-bottom:10px" onclick="VSTech.picker()">+ Inserisci dalla libreria tecnica</button>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino. Tre finiture moderne, ognuna modificabile.</p><div class="vsModels">${[['concrete','01 · Cemento architettonico'],['stone','02 · Pietra naturale'],['wood','03 · Rovere contemporaneo']].map(([k,l])=>`<button class="vsModel" onclick="VS.finish('${k}')">${l}</button>`).join('')}</div><button class="btn" onclick="VS.applyModernScene()">Applica design moderno all’ambiente</button>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
 function renderProps(){let el=$id('vsProps');if(!el)return;let o=model().objects.find(o=>o.id===U.selected);if(!o){el.innerHTML='<p class="small">Clicca un oggetto nel 3D per modificarlo.</p>';return}const keys=[['x','X'],['y','Y'],['z','Z'],['w','Larghezza'],['h','Altezza'],['d','Spessore / profondità'],['rx','Rotazione X'],['ry','Rotazione Y'],['rz','Rotazione Z']];el.innerHTML=`<strong>${esc(o.name)}</strong><small class="muted"> · ${esc(o.kind)}</small><label class="label">Nome</label><input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"><div class="vsFieldGrid">${keys.map(([k,l])=>`<label>${l}<input class="field" type="number" step="0.1" value="${N(o[k])}" onchange="VS.edit('${o.id}','${k}',this.value)"></label>`).join('')}</div>${['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica</label><select class="field" onchange="VS.finish(this.value)">${[['concrete','Cemento moderno'],['stone','Pietra naturale'],['wood','Rovere contemporaneo']].map(([v,l])=>`<option value="${v}" ${o.finish===v?'selected':''}>${l}</option>`).join('')}</select>`:''}<div class="actions"><button class="btn" onclick="VS.duplicate()">Duplica</button><button class="btn danger" onclick="VS.remove()">Elimina</button>${['glass','mirror'].includes(o.kind)?'<button class="btn" onclick="VS.shapeEditor()">Sagoma 2D</button>':''}</div>`}
 function updateTitle(){let el=$id('vsTitle');if(el)el.textContent=S.current?.title||'Nuovo progetto'}
 function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),acc=m.objects.filter(o=>o.kind==='accessory').length,material=area*180,accessories=acc*35,cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
@@ -121,9 +121,67 @@ function makeSurfaceTexture(Three,finish){
  const texture=new Three.CanvasTexture(canvas);texture.colorSpace=Three.SRGBColorSpace||undefined;texture.encoding=Three.sRGBEncoding;texture.wrapS=texture.wrapT=Three.RepeatWrapping;texture.anisotropy=4;
  materialCache.set(key,texture);return texture;
 }
+function technicalHoles(o){
+ const result=(o.holes||[]).map(h=>({...h}));
+ if(o.kind!=='glass'&&o.kind!=='mirror')return result;
+ for(const a of model().objects){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec)continue;
+  for(const h of a.technicalSpec.holes||[])result.push({type:'circle',x:mm(a.localX+N(h.x)),y:mm(a.localY+N(h.y)),r:N(h.r),technicalInstanceId:a.id});
+ }
+ return result;
+}
+function technicalCutouts(o){const result=[];
+ for(const a of model().objects){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec)continue;
+  for(const poly of a.technicalSpec.cutouts||[])result.push(poly.map(p=>[mm(a.localX+N(p[0])),mm(a.localY+N(p[1]))]));
+ }return result;
+}
+function linkedAccessoryPosition(o){if(!o.technicalSpec)return;const owner=model().objects.find(p=>p.id===o.attachTo);if(!owner)return;
+ const ang=N(owner.ry)*Math.PI/180,dx=o.localX-owner.w/2,dz=owner.d/2+20;
+ o.x=mm(owner.x+dx*Math.cos(ang)+dz*Math.sin(ang));o.y=mm(owner.y-owner.h/2+o.localY);
+ o.z=mm(owner.z-dx*Math.sin(ang)+dz*Math.cos(ang));o.ry=owner.ry;
+}
+function linkedAccessoryLocal(o){const owner=model().objects.find(p=>p.id===o.attachTo);if(!owner)return;
+ const ang=N(owner.ry)*Math.PI/180,dx=o.x-owner.x,dz=o.z-owner.z;
+ const x=mm(owner.w/2+dx*Math.cos(ang)-dz*Math.sin(ang)),y=mm(o.y-(owner.y-owner.h/2));
+ o.localX=x;o.localY=y;linkedAccessoryPosition(o);
+}
+function insidePanel(owner,x,y,r=0){const poly=owner.shape||[[0,0],[owner.w,0],[owner.w,owner.h],[0,owner.h]];
+ if(x-r<0||x+r>owner.w||y-r<0||y+r>owner.h)return false;
+ const inside=(px,py)=>{let c=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>py)!==(b[1]>py)&&px<(b[0]-a[0])*(py-a[1])/(b[1]-a[1])+a[0])c=!c}return c};
+ return [[x-r,y],[x+r,y],[x,y-r],[x,y+r],[x,y]].every(p=>inside(...p));
+}
+function technicalPatternValid(owner,spec,x,y){
+ if(!Number.isFinite(x)||!Number.isFinite(y))return 'Coordinate non valide';
+ for(const h of spec.holes||[]){const cx=x+N(h.x),cy=y+N(h.y),r=N(h.r);if(!(r>0)||!insidePanel(owner,cx,cy,r))return 'Una foratura esce dal vetro: sposta l’accessorio';}
+ const polyOuter=owner.shape||[[0,0],[owner.w,0],[owner.w,owner.h],[0,owner.h]];
+ for(const poly of spec.cutouts||[]){
+  if(poly.length<3)return 'Contorno di taglio non chiuso';
+  const points=poly.map(q=>[x+N(q[0]),y+N(q[1])]);
+  if(!window.VSGeometry.validate(points).ok)return 'Contorno di taglio non valido';
+  for(const q of points)if(!insidePanel(owner,q[0],q[1],0.5))return 'Un contorno esce dalla lastra';
+  for(let i=0;i<points.length;i++)for(let j=0;j<polyOuter.length;j++){
+   if(window.VSGeometry.segmentsIntersect(points[i],points[(i+1)%points.length],polyOuter[j],polyOuter[(j+1)%polyOuter.length]))return 'Il contorno di taglio interseca il bordo del vetro';
+  }
+  for(const h of [...(owner.holes||[]),...technicalHoles(owner),...(spec.holes||[]).map(h=>({x:x+N(h.x),y:y+N(h.y),r:N(h.r)}))]){
+   if(window.VSGeometry.pointInside([h.x,h.y],points))return 'Foro sovrapposto a contorno di taglio';
+  }
+ }
+ return null;
+}
+function placeTechnicalAccessory(item,x,y){const owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
+ if(!owner)return {ok:false,error:'Seleziona prima una lastra'};
+ if(item.status!=='approved')return {ok:false,error:'La scheda tecnica non è stata approvata'};
+ if(owner.d<N(item.glass_min)||owner.d>N(item.glass_max))return {ok:false,error:'Spessore vetro non compatibile con la scheda accessorio'};
+ const spec=structuredClone(item.cut_spec||{holes:[],cutouts:[]});const problem=technicalPatternValid(owner,spec,x,y);if(problem)return {ok:false,error:problem};
+ const outline=owner.shape?.length>=3?owner.shape:[[0,0],[owner.w,0],[owner.w,owner.h],[0,owner.h]];
+ const candidate=[...technicalHoles(owner),...(spec.holes||[]).map(h=>({x:x+N(h.x),y:y+N(h.y),r:N(h.r)}))];
+ const verified=window.VSGeometry.validate(outline,candidate);
+ if(!verified.ok)return {ok:false,error:'Conflitto fra le lavorazioni: '+verified.error};
+ remember();const o=object('accessory',item.name,0,0,0,50,65,35,{accessoryType:item.category,attachTo:owner.id,technicalId:item.id,technicalCode:item.code,technicalSpec:spec,localX:x,localY:y});
+ linkedAccessoryPosition(o);model().objects.push(o);U.selected=o.id;refresh(true);return {ok:true,id:o.id};
+}
 function createMesh(o){
  const Three=T(),glass=['glass','mirror'].includes(o.kind),building=['wall','floor','stair','balcony'].includes(o.kind);let geo;
- if(o.shape?.length>=3&&glass){let s=new Three.Shape();s.moveTo(o.shape[0][0]-o.w/2,o.shape[0][1]-o.h/2);o.shape.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of o.holes||[]){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
+ if(glass&&(o.shape?.length>=3||model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))){let outline=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];let s=new Three.Shape();s.moveTo(outline[0][0]-o.w/2,outline[0][1]-o.h/2);outline.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of technicalHoles(o)){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}for(const poly of technicalCutouts(o)){let path=new Three.Path();path.moveTo(poly[0][0]-o.w/2,poly[0][1]-o.h/2);for(const p of poly.slice(1))path.lineTo(p[0]-o.w/2,p[1]-o.h/2);path.closePath();s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
  else geo=new Three.BoxGeometry(Math.max(1,o.w),Math.max(1,o.h),Math.max(1,o.d));
  let material;
  if(glass){material=new Three.MeshPhysicalMaterial({color:o.kind==='mirror'?0xa8bec8:0xc4eaf0,metalness:o.kind==='mirror'?.78:0,roughness:o.kind==='mirror'?.08:.065,transmission:o.kind==='mirror'?0:.55,transparent:o.kind!=='mirror',opacity:1,ior:1.48,thickness:Math.max(1,o.d),side:Three.DoubleSide,clearcoat:1,clearcoatRoughness:.04,depthWrite:true});
@@ -157,7 +215,18 @@ function createMesh(o){
  }
  return mesh;
 }
-function drawScene(){if(!V?.studio)return;const group=V.group;for(const child of [...group.children]){group.remove(child);child.traverse(n=>{n.geometry?.dispose();if(n.material){let mats=Array.isArray(n.material)?n.material:[n.material];mats.forEach(x=>{if(x.map&&x.map!==materialCache.get(x.userData?.surface))x.map.dispose();x.dispose()})}})}renderMeshes.clear();for(const o of model().objects){let mesh=createMesh(o);group.add(mesh);renderMeshes.set(o.id,mesh)}highlight()}
+const techGLBCache=new Map();
+async function loadTechnicalGLB(o,placeholder){
+ if(!window.THREE?.GLTFLoader||!V?.studio||!o.technicalId)return;
+ const key=o.technicalId;
+ try{
+  if(!techGLBCache.has(key))techGLBCache.set(key,(async()=>{const r=await fetch('/api/technical-accessories/'+key+'/files/glb',{credentials:'same-origin'});if(!r.ok)return null;const bytes=await r.arrayBuffer();return await new Promise((resolve,reject)=>new THREE.GLTFLoader().parse(bytes,'',v=>resolve(v.scene),reject))})());
+  const obj=await techGLBCache.get(key);if(!obj||!placeholder.parent||!V?.studio)return;
+  const child=obj.clone(true);const box=new THREE.Box3().setFromObject(child);const center=box.getCenter(new THREE.Vector3());child.position.sub(center);
+  placeholder.clear();placeholder.add(child);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});
+ }catch(e){console.warn('GLB accessorio non disponibile:',e)}
+}
+function drawScene(){if(!V?.studio)return;const group=V.group;for(const child of [...group.children]){group.remove(child);child.traverse(n=>{n.geometry?.dispose();if(n.material){let mats=Array.isArray(n.material)?n.material:[n.material];mats.forEach(x=>{if(x.map&&x.map!==materialCache.get(x.userData?.surface))x.map.dispose();x.dispose()})}})}renderMeshes.clear();for(const o of model().objects){if(o.technicalSpec)linkedAccessoryPosition(o);let mesh=createMesh(o);group.add(mesh);renderMeshes.set(o.id,mesh);if(o.technicalId)loadTechnicalGLB(o,mesh)}highlight()}
 function highlight(){for(const [id,node] of renderMeshes){node.traverse(v=>{if(v.isMesh&&v.material?.emissive){v.material.emissive.setHex(id===U.selected?0x13798b:0);v.material.emissiveIntensity=id===U.selected?.24:0}})}}
 function positionCamera(){if(!V?.studio)return;const target=orbit.target||new (T().Vector3)(0,1000,0);let camera=V.camera;camera.position.set(target.x+orbit.dist*Math.sin(orbit.az)*Math.cos(orbit.el),target.y+orbit.dist*Math.sin(orbit.el),target.z+orbit.dist*Math.cos(orbit.az)*Math.cos(orbit.el));camera.lookAt(target)}
 function frameModel(){if(!V?.studio)return;const bounds=new (T().Box3)();V.group.updateMatrixWorld(true);V.group.traverse(o=>{if(o.isMesh&&o.geometry){o.geometry.computeBoundingBox();bounds.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld))}});if(bounds.isEmpty())return;orbit.target=bounds.getCenter(new (T().Vector3)());let size=bounds.getSize(new (T().Vector3)()),max=Math.max(size.x,size.y,size.z,550),fov=V.camera.fov*Math.PI/180;orbit.dist=Math.min(55000,Math.max(800,max/(2*Math.tan(fov/2))*1.55));positionCamera()}
@@ -168,7 +237,7 @@ function initStudio(){if(!T())return toast('Three.js non caricato');let canvas=$
  function magnetic(moved){if(!U.snap)return;const threshold=65;let best={x:null,y:null,z:null};for(const q of model().objects){if(q.id===moved.id)continue;for(const axis of ['x','y','z']){const size=axis==='x'?'w':axis==='y'?'h':'d',a=moved[size]/2,b=q[size]/2;let options=[q[axis],q[axis]+a+b,q[axis]-a-b,q[axis]+b-a,q[axis]-b+a];for(const v of options){let d=Math.abs(moved[axis]-v);if(d<=threshold&&(!best[axis]||d<best[axis].d))best[axis]={v,d}}}}for(const axis of ['x','y','z'])if(best[axis])moved[axis]=mm(best[axis].v)}
  canvas.addEventListener('pointerdown',e=>{const id=pick(e),o=model().objects.find(x=>x.id===id);drag={x:e.clientX,y:e.clientY,az:orbit.az,el:orbit.el,id,mode:e.altKey?'orbit':id?'move':'orbit',start:o?{x:o.x,y:o.y,z:o.z}:null,shift:e.shiftKey,moved:false,recorded:false};if(id){U.selected=id;renderProps();renderSidebar();highlight()}canvas.setPointerCapture(e.pointerId)});
  canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)<3&&!drag.moved)return;drag.moved=true;if(drag.mode==='move'&&drag.start){const o=model().objects.find(v=>v.id===drag.id);if(!o)return;if(!drag.recorded){remember();drag.recorded=true}const step=worldScale();const right=new Three.Vector3().setFromMatrixColumn(camera.matrixWorld,0),up=new Three.Vector3().setFromMatrixColumn(camera.matrixWorld,1);if(drag.shift){o.x=mm(drag.start.x+right.x*dx*step-up.x*dy*step);o.z=mm(drag.start.z+right.z*dx*step-up.z*dy*step)}else{o.x=mm(drag.start.x+(right.x*dx-up.x*dy)*step);o.y=mm(drag.start.y+(right.y*dx-up.y*dy)*step);o.z=mm(drag.start.z+(right.z*dx-up.z*dy)*step)}drawScene();}else{orbit.az=drag.az-dx*.006;orbit.el=Math.max(-1.4,Math.min(1.5,drag.el+dy*.005));positionCamera()}});
- canvas.addEventListener('pointerup',()=>{if(drag?.mode==='move'&&drag.moved){let o=model().objects.find(v=>v.id===drag.id);if(o)magnetic(o);drawScene();renderProps();queueAutosave()}drag=null});
+ canvas.addEventListener('pointerup',()=>{if(drag?.mode==='move'&&drag.moved){let o=model().objects.find(v=>v.id===drag.id);if(o){if(o.technicalSpec){const old=[o.localX,o.localY];linkedAccessoryLocal(o);const owner=model().objects.find(x=>x.id===o.attachTo);if(technicalPatternValid(owner,o.technicalSpec,o.localX,o.localY)){o.localX=old[0];o.localY=old[1];linkedAccessoryPosition(o);toast('Posizione non valida per i tagli del vetro')}}else magnetic(o)}drawScene();renderProps();queueAutosave()}drag=null});
  canvas.addEventListener('pointercancel',()=>{drag=null});
 canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.dist=Math.max(250,Math.min(70000,orbit.dist*(e.deltaY>0?1.1:.9)));positionCamera()},{passive:false});
  function tick(){if(!V?.studio||V.renderer!==renderer||!document.contains(canvas))return;let rect=canvas.parentElement.getBoundingClientRect(),w=Math.max(1,Math.floor(rect.width)),h=Math.max(1,Math.floor(rect.height));if(canvas.width!==Math.round(w*renderer.getPixelRatio())||canvas.height!==Math.round(h*renderer.getPixelRatio())){renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}renderer.render(scene,camera);requestAnimationFrame(tick)}tick()}
@@ -181,7 +250,7 @@ function edit(id,key,val){
  if(key!=='name'&&!Number.isFinite(value))return toast('Valore numerico non valido');
  if(['w','h','d'].includes(key)&&value<=0)return toast('La dimensione deve essere maggiore di zero');
  if(key==='name'&&(!value||!String(value).trim()))return toast('Inserisci un nome valido');
- remember();o[key]=value;
+ remember();o[key]=value;if(o.technicalSpec&&['x','y','z'].includes(key)){linkedAccessoryLocal(o);const parent=model().objects.find(v=>v.id===o.attachTo);const error=technicalPatternValid(parent,o.technicalSpec,o.localX,o.localY);if(error){o[key]=oldValue;linkedAccessoryLocal(o);return toast(error)}}
  if((key==='w'||key==='h')&&o.shape?.length>=3){
   const idx=key==='w'?0:1,ratio=value/Math.max(1,oldValue);
   o.shape=o.shape.map(p=>p.map((v,i)=>i===idx?mm(v*ratio):v));
@@ -196,7 +265,7 @@ function edit(id,key,val){
  if(['x','y','z'].includes(key)&&['glass','mirror'].includes(o.kind))for(const item of model().objects){if(item.attachTo===o.id)item[key]=mm(N(item[key])+(value-N(oldValue)))}
  refresh(true);
 }
-function duplicate(){let o=model().objects.find(o=>o.id===U.selected);if(!o)return;remember();let copy=structuredClone(o);copy.id=uid();copy.x+=140;copy.name+=' (copia)';model().objects.push(copy);U.selected=copy.id;refresh(true)}
+function duplicate(){let o=model().objects.find(o=>o.id===U.selected);if(!o)return;if(o.technicalSpec)return toast('Per duplicare una lavorazione tecnica, seleziona la lastra e inserisci una nuova istanza dalla libreria');remember();let copy=structuredClone(o);copy.id=uid();copy.x+=140;copy.name+=' (copia)';model().objects.push(copy);U.selected=copy.id;refresh(true)}
 function remove(){if(!U.selected)return;remember();model().objects=model().objects.filter(o=>o.id!==U.selected&&o.attachTo!==U.selected);U.selected=null;refresh(true)}
 function applyModernScene(){remember();for(const o of model().objects){if(o.kind==='wall')o.finish='concrete';if(['floor','balcony'].includes(o.kind))o.finish='stone';if(o.kind==='stair')o.finish='wood'}refresh(true)}
 function finish(f){let o=model().objects.find(o=>o.id===U.selected);if(!o)return toast('Seleziona prima un elemento');remember();o.finish=f;refresh(true)}
@@ -269,12 +338,13 @@ function switchMode(){viewMode=viewMode==='real'?'technical':'real';$id('vsVisua
 function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='gltf')downloadGLTF()}
 function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-vstab]').forEach(b=>b.classList.toggle('active',b.dataset.vstab===U.tab))}
 function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
+window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},place:placeTechnicalAccessory};
 window.VSCADBridge={
- selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));return o?structuredClone(o):null},
+ selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));return o?{...structuredClone(o),holes:technicalHoles(o),cutouts:technicalCutouts(o)}:null},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
- const r=window.VSGeometry.normalize(outline,holes);if(!r.ok)return r;
+ const manualHoles=(holes||[]).filter(h=>!h.technicalInstanceId);const r=window.VSGeometry.normalize(outline,manualHoles);if(!r.ok)return r;
  remember();const left=o.x-o.w/2,bottom=o.y-o.h/2;
- o.x=mm(left+r.bounds.minX+r.width/2);o.y=mm(bottom+r.bounds.minY+r.height/2);o.w=mm(r.width);o.h=mm(r.height);o.shape=r.points;o.holes=r.holes;
+ o.x=mm(left+r.bounds.minX+r.width/2);o.y=mm(bottom+r.bounds.minY+r.height/2);o.w=mm(r.width);o.h=mm(r.height);o.shape=r.points;o.holes=r.holes;for(const a of model().objects)if(a.attachTo===o.id&&a.technicalSpec){a.localX=mm(a.localX-r.bounds.minX);a.localY=mm(a.localY-r.bounds.minY);linkedAccessoryPosition(a);}
  if(profile&&Array.isArray(profile.points)){o.cadProfile={points:profile.points.map(v=>[v[0]-r.bounds.minX,v[1]-r.bounds.minY]),bulges:[...(profile.bulges||[])],constraints:{...(profile.constraints||{})}}}
  else delete o.cadProfile;
  refresh(true);return {ok:true};},
@@ -286,13 +356,13 @@ exportDXF=function(){const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70'
  const line=(a,b,layer)=>rows.push('0','LINE','8',layer,'10',String(a[0]),'20',String(a[1]),'30','0','11',String(b[0]),'21',String(b[1]),'31','0');
  for(const [i,o] of model().objects.filter(x=>['glass','mirror'].includes(x.kind)).entries()){
   const layer='LASTRA_'+(i+1),pts=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];
-  if(!window.VSGeometry.validate(pts,o.holes||[]).ok){toast('Esportazione DXF bloccata: geometria non valida '+o.name);return}
+  if(!window.VSGeometry.validate(pts,technicalHoles(o)).ok){toast('Esportazione DXF bloccata: geometria non valida '+o.name);return}
   if(o.cadProfile?.points?.length>=3&&o.cadProfile.bulges?.some(b=>Math.abs(b||0)>1e-9)){
    const profile=o.cadProfile;
    rows.push('0','LWPOLYLINE','8',layer,'90',String(profile.points.length),'70','1');
    for(let j=0;j<profile.points.length;j++)rows.push('10',String(profile.points[j][0]),'20',String(profile.points[j][1]),'42',String(profile.bulges[j]||0));
   }else for(let j=0;j<pts.length;j++)line(pts[j],pts[(j+1)%pts.length],layer);
-  for(const h of o.holes||[]){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}
+  for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of technicalCutouts(o))for(let i=0;i<polygon.length;i++)line(polygon[i],polygon[(i+1)%polygon.length],layer+'_TAGLI')
  }
  rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+'.dxf',rows.join('\n'),'application/dxf')};
 exportCSV=function(){const p=pricingModel(),rows=[['Voce','Valore'],['Superficie vetro m²',p.area.toFixed(2)],['Materiali €',p.material.toFixed(2)],['Accessori €',p.accessories.toFixed(2)],['Imponibile €',p.net.toFixed(2)],['IVA €',p.tax.toFixed(2)],['Totale €',p.total.toFixed(2)]];download('distinta-'+safeFile(S.current.title)+'.csv','\uFEFF'+rows.map(r=>r.map(v=>String(v)).join(';')).join('\r\n'),'text/csv')};
