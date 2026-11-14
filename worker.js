@@ -47,6 +47,71 @@ if(p==='/api/login'&&method==='POST'){
 }
 const u=await auth(req,env);if(!u)return fail(401,'Sessione non valida. Effettua l’accesso.');
 if(u.role==='tenant'&&u.tenant_status==='paused'&&!['GET','HEAD'].includes(method)&&!['/api/logout','/api/account/password'].includes(p))return fail(403,'Account in sola lettura: abbonamento sospeso');
+// Libreria tecnica privata: dati su D1, file CAD su R2; nessuna condivisione tra vetrerie.
+if(p.startsWith('/api/technical-accessories')){
+ if(u.role!=='tenant')return fail(403,'Accesso riservato alla vetreria');
+ const match=p.match(/^\/api\/technical-accessories(?:\/([\w-]+))?(?:\/files\/(dwg|step|dxf|glb))?$/);
+ if(!match)return fail(404,'Percorso non valido');
+ const id=match[1],fileType=match[2],tenant=u.tenant_id;
+ if(!id&&method==='GET')return json({items:(await env.DB.prepare('SELECT id,code,name,category,manufacturer,glass_min,glass_max,price,status,cut_spec,model_meta,created_at,updated_at FROM technical_accessories WHERE tenant_id=? ORDER BY name').bind(tenant).all()).results});
+ if(!id&&method==='POST'){
+  const x=await parse(req),code=textv(x.code,80).trim(),name=textv(x.name,160).trim();
+  if(!code||!name)return fail(400,'Codice e nome sono obbligatori');
+  const newId=uid();
+  try{await env.DB.prepare('INSERT INTO technical_accessories(id,tenant_id,code,name,category,manufacturer,glass_min,glass_max,price,status,cut_spec,model_meta) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,tenant,code,name,textv(x.category||'cerniera',60),textv(x.manufacturer,160),num(x.glass_min||4),num(x.glass_max||25),num(x.price||0),'draft',JSON.stringify({holes:[],cutouts:[],origin:[0,0]}),JSON.stringify({})).run();}
+  catch(e){return fail(409,'Codice già utilizzato in questa vetreria')}
+  await audit(env,u,'technical.create',newId);return json({ok:true,id:newId});
+ }
+ if(!id)return fail(405,'Metodo non previsto');
+ const item=await env.DB.prepare('SELECT * FROM technical_accessories WHERE id=? AND tenant_id=?').bind(id,tenant).first();
+ if(!item)return fail(404,'Accessorio non trovato');
+ if(fileType){
+  if(!env.TECH_FILES)return fail(503,'Archivio R2 non collegato: configura il binding TECH_FILES');
+  const key=`technical/${tenant}/${id}/${fileType}`;
+  if(method==='GET'){
+   const stored=await env.TECH_FILES.get(key);if(!stored)return fail(404,'File non caricato');
+   return new Response(stored.body,{headers:{'Content-Type':fileType==='glb'?'model/gltf-binary':'application/octet-stream','Content-Disposition':'attachment; filename="'+id+'.'+fileType+'"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+  }
+  if(method==='PUT'){
+   const size=Number(req.headers.get('content-length')||0);
+   if(size>12*1024*1024)return fail(413,'Il file supera il limite di 12 MB');
+   const bytes=await req.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>12*1024*1024)return fail(400,'File vuoto o troppo grande');
+   const magic=new Uint8Array(bytes.slice(0,16));
+   const begin=String.fromCharCode(...magic);
+   if(fileType==='dwg'&&!begin.startsWith('AC10'))return fail(400,'DWG non riconosciuto');
+   if(fileType==='step'&&!new TextDecoder().decode(bytes.slice(0,2048)).includes('ISO-10303-21'))return fail(400,'STEP non riconosciuto');
+   if(fileType==='glb'&&!(magic[0]===103&&magic[1]===108&&magic[2]===84&&magic[3]===70))return fail(400,'GLB non riconosciuto');
+   if(fileType==='dxf'&&!new TextDecoder().decode(bytes.slice(0,256)).includes('SECTION'))return fail(400,'DXF non riconosciuto');
+   await env.TECH_FILES.put(key,bytes,{httpMetadata:{contentType:fileType==='glb'?'model/gltf-binary':'application/octet-stream'}});
+   const meta=JSON.parse(item.model_meta||'{}');meta[fileType]={size:bytes.byteLength,uploadedAt:iso()};
+   await env.DB.prepare("UPDATE technical_accessories SET model_meta=?,status='draft',updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?").bind(JSON.stringify(meta),id,tenant).run();
+   await audit(env,u,'technical.file',id);return json({ok:true,bytes:bytes.byteLength});
+  }
+  return fail(405,'Metodo non supportato');
+ }
+ if(method==='GET')return json({item});
+ if(method==='PATCH'){
+  const x=await parse(req);
+  const code=textv(x.code??item.code,80).trim(),name=textv(x.name??item.name,160).trim();
+  if(!code||!name)return fail(400,'Codice e nome obbligatori');
+  const min=num(x.glass_min??item.glass_min),max=num(x.glass_max??item.glass_max);
+  if(min<=0||max<min||max>100)return fail(400,'Spessori non validi');
+  let cuts=x.cut_spec??JSON.parse(item.cut_spec||'{}');
+  if(!cuts||!Array.isArray(cuts.holes)||!Array.isArray(cuts.cutouts)||cuts.holes.length>80||cuts.cutouts.length>40)return fail(400,'Lavorazioni non valide');
+  for(const h of cuts.holes)if(!Number.isFinite(+h.x)||!Number.isFinite(+h.y)||!Number.isFinite(+h.r)||+h.r<=0||+h.r>300)return fail(400,'Foratura non valida');
+  for(const poly of cuts.cutouts)if(!Array.isArray(poly)||poly.length<3||poly.length>300||poly.some(q=>!Array.isArray(q)||q.length!==2||!q.every(v=>Number.isFinite(+v))))return fail(400,'Contorno non valido');
+  const status=x.status==='approved'?'approved':'draft';
+  if(status==='approved'&&!(cuts.holes.length||cuts.cutouts.length||x.no_cutting===true))return fail(400,'Definisci le lavorazioni o conferma che non sono necessarie');
+  try{await env.DB.prepare('UPDATE technical_accessories SET code=?,name=?,category=?,manufacturer=?,glass_min=?,glass_max=?,price=?,status=?,cut_spec=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND tenant_id=?').bind(code,name,textv(x.category??item.category,60),textv(x.manufacturer??item.manufacturer,160),min,max,num(x.price??item.price),status,JSON.stringify(cuts),id,tenant).run()}catch(e){return fail(409,'Codice duplicato')}
+  await audit(env,u,'technical.update',id);return json({ok:true});
+ }
+ if(method==='DELETE'){
+  await env.DB.prepare('DELETE FROM technical_accessories WHERE id=? AND tenant_id=?').bind(id,tenant).run();
+  if(env.TECH_FILES)await Promise.all(['dwg','dxf','step','glb'].map(ext=>env.TECH_FILES.delete(`technical/${tenant}/${id}/${ext}`)));
+  await audit(env,u,'technical.delete',id);return json({ok:true});
+ }
+ return fail(405,'Metodo non supportato');
+}
 if(p==='/api/me')return json({id:u.id,email:u.email,role:u.role,tenantId:u.tenant_id,tenantName:u.tenant_name,planId:u.plan_id,tenantStatus:u.tenant_status,endsAt:u.ends_at});
 if(p==='/api/logout'&&method==='POST'){const token=req.headers.get('cookie')?.match(/vs_session=([^;]+)/)?.[1];if(token)await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await sha(token)).run();return json({ok:true},200,{'set-cookie':'vs_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax'})}
 if(p==='/api/account/password'&&method==='POST'){if(u.role==='superadmin')return fail(403,'Modifica le credenziali SUPER ADMIN dai segreti Cloudflare');const x=await parse(req);if(!x.current||!x.next)return fail(400,'Compila entrambi i campi');const row=await env.DB.prepare('SELECT password_salt,password_hash FROM users WHERE id=?').bind(u.id).first();if(await passhash(x.current,row.password_salt)!==row.password_hash)return fail(403,'Password attuale errata');const [salt,hash]=await setPass(x.next);await env.DB.prepare('UPDATE users SET password_salt=?,password_hash=? WHERE id=?').bind(salt,hash,u.id).run();await audit(env,u,'password.changed');return json({ok:true})}

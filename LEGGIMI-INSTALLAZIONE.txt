@@ -1,0 +1,71 @@
+VETROSTUDIO 3D — LIBRERIA TECNICA ACCESSORI
+=========================================
+
+Questo aggiornamento aggiunge una Libreria tecnica privata per ogni vetreria.
+I file DWG e STEP originali vengono conservati in Cloudflare R2; schede, prezzi,
+spessori, stato e lavorazioni vengono salvati in D1.
+
+INSTALLAZIONE SULL'ATTUALE REPOSITORY
+1. Esegui un BACKUP del progetto GitHub e del database D1.
+2. Crea un bucket Cloudflare R2 con nome: vetrostudio-technical.
+   NOTA: R2 può avere vincoli di fatturazione e costi oltre le soglie gratuite.
+3. Nel progetto Cloudflare Pages/Worker collega il bucket con binding:
+   TECH_FILES (nome esatto). Se usi Wrangler, il binding è nel wrangler.toml.
+4. In Cloudflare D1 > Console, esegui il contenuto di:
+   migration-libreria-tecnica.sql
+   UNA VOLTA sul database esistente. Non eseguire nuovamente schema.sql.
+5. Sovrascrivi worker.js alla radice e questi file in public:
+   app.js, index.html, studio.js, cad2d.js.
+6. Aggiungi in public: technical-accessories.js.
+7. Il file wrangler.toml incluso aggiunge l'R2 binding; verifica che
+   corrisponda al progetto deployato. NON modificare il database_id esistente.
+8. Pubblica su Cloudflare; esegui un nuovo accesso come vetreria.
+
+USO
+A. Nel menu: Libreria tecnica > Nuovo accessorio.
+B. Inserisci codice, nome, produttore, intervallo spessori e prezzo.
+C. Carica originali STEP e DWG (archiviazione riservata su R2).
+D. Per applicare automaticamente una lavorazione devi fornire anche un
+   DXF ASCII in millimetri oppure inserire manualmente i fori.
+E. Il comando Rileva da DXF riconosce fori CIRCLE e polilinee chiuse
+   LWPOLYLINE senza bulge. Il programma segnala le entità ignorate.
+   ATTENZIONE: verifica che i contorni chiusi rappresentino effettivamente
+   tagli interni, non l'ingombro dell'accessorio! Escludi quelli sbagliati.
+F. Regola origine/posizione relativa e approva la lavorazione.
+G. Per visualizzare la ferramenta in 3D carica anche il modello GLB.
+   Il file convert_step_to_glb.py permette di convertire STEP in GLB su PC
+   con Python + cadquery + numpy + trimesh; non viene eseguito su Cloudflare.
+H. Configuratore 3D > seleziona una lastra > Accessori > Inserisci dalla
+   libreria tecnica; imposta coordinate X/Y locali sul vetro.
+I. Lo stesso foro apparirà nel CAD 2D, nella lastra 3D e nell'export DXF.
+   Modificando/eliminando l'accessorio si spostano/eliminano i relativi tagli.
+
+COSA FUNZIONA E COSA NON È ANCORA AUTOMATICO
+- SÌ: CRUD, isolamento vetrerie, archiviazione file, STEP->GLB con convertitore,
+  DXF->fori/contorni supportati, verifica spessore, controllo sovrapposizioni,
+  link 2D/3D, esportazione DXF, ripristino nei progetti salvati.
+- NO: interpretazione automatica dei DWG binari direttamente nel browser;
+  per ora vanno convertiti in DXF con un convertitore CAD attendibile.
+- NO: STEP->GLB direttamente nel browser; il convertitore offline è incluso.
+- NO: riconoscimento affidabile delle superfici di contatto dell'accessorio
+  da un STEP generico senza punti di fissaggio dichiarati dal produttore.
+- NO: certificazione delle distanze minime, della temperabilità o dei limiti
+  produttivi. Gli schemi importati richiedono approvazione tecnica umana.
+- Il modello GLB appare nel 3D solo se il file è stato convertito e caricato.
+- Il file DXF deve dichiarare $INSUNITS=4 (millimetri); in caso contrario
+  il programma non applica geometrie per evitare errori di scala.
+- Accessori/fori già presenti nei progetti non sono migrati automaticamente.
+
+CONTROLLO SUCCESSIVO AL DEPLOY
+1. Registra un accessorio test e carica DWG/STEP.
+2. Carica un DXF valido in mm, riconosci i fori e verifica le misure.
+3. Approva e inserisci su lastra di spessore compatibile.
+4. Apri CAD 2D, controlla posizioni e DXF esportato.
+5. Sposta/elimina la cerniera e verifica i fori associati.
+6. Salva il progetto, riaprilo e verifica che l'associazione persista.
+
+NOTE DI SICUREZZA
+Non usare le lavorazioni per il taglio CNC senza confronto con il disegno
+originale del produttore e verifica della vetreria. I file sono conservati
+privatamente e serviti dalle API soltanto a una sessione autenticata della
+stessa vetreria. Gli import non approvati non sono applicabili nel CAD.

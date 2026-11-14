@@ -14,3 +14,7 @@ database_id = "84a8f88d-1e34-45b2-b0a7-4dbefb53293a"
 
 [vars]
 APP_NAME = "VetroStudio 3D"
+
+[[r2_buckets]]
+binding = "TECH_FILES"
+bucket_name = "vetrostudio-technical"
