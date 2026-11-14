@@ -47,11 +47,24 @@ async function qLoadPrices(){if(QP.loaded)return;let res=await api('/catalogue')
 async function glassQuote(){await qLoadPrices();let c=await api('/clients');S.clients=c.items;qInitial();return `<div class="qscreen"><div class="qhead"><div><h2>Preventivo Vetro</h2><p class="muted">Configura le lavorazioni, visualizza prospetto e pianta e prepara il documento.</p></div><div class="actions"><button class="btn" onclick="qStartNew()">Nuovo</button><button class="btn" onclick="qOpenList()">Apri</button><button class="btn" onclick="navigate('quotePrices')">⚙ Listino prezzi</button><button class="btn primary" onclick="qSave()">Salva</button><button class="btn" onclick="qPrint()">Stampa / PDF</button></div></div><div id="qWorkspace"></div></div>`}
 function qItemFields(i){
  const isCorner=i.system==='angolare';
- const options=[['fisso','Solo fisso'],['scorrevole','Scorrevole'],['battente','Porta battente'],['fisso_battente','Fisso + porta battente'],['fisso_scorrevole','Fisso + porta scorrevole'],['impacchettabile','Impacchettabile']];
- const cornerFields=isCorner?`<div class="qfull" style="grid-column:1/-1;padding:12px;background:#eef6f7;border:1px solid #d6e5e9;border-radius:10px"><b>Configurazione dei due lati</b><p class="small">Larghezza principale = lato A. Imposta il lato B e scegli il movimento di ciascun lato. Lo schema 2D e la superficie seguono questi valori.</p><div class="qgrid2">${qField('Larghezza lato B (mm)','qi_cornerWidthB',i.cornerWidthB||1500,1)}${qField('Moduli sul lato A','qi_cornerSplit',i.cornerSplit||2,1)}${qSel('Lato A · Sistema','qi_cornerModeA',i.cornerModeA||'scorrevole',options)}${qSel('Lato B · Sistema','qi_cornerModeB',i.cornerModeB||'fisso',options)}${qSel('Lato A · Verso','qi_cornerDirectionA',i.cornerDirectionA||'destra',[['destra','Verso destra'],['sinistra','Verso sinistra']])}${qSel('Lato B · Verso','qi_cornerDirectionB',i.cornerDirectionB||'destra',[['destra','Verso angolo / destra'],['sinistra','Verso estremità / sinistra']])}${qSel('Porta contrassegnata P','qi_cornerDoor',i.cornerDoor||'nessuna',[['nessuna','Nessuna'],['a','Sul lato A'],['b','Sul lato B']])}</div></div>`:'';
- const openingFields=(i.system==='battente'||i.system==='angolare')?qSel('Apertura porta battente','qi_opening',i.opening||'esterno',[['esterno','Verso esterno'],['interno','Verso interno']]):'';
- const doorFields=isCorner?'':`${qSel('Porta / anta principale','qi_doorEnabled',i.doorEnabled||'auto',[['auto','Automatico per modello'],['si','Presente (P)'],['no','Assente']])}${qSel('Posizione porta P','qi_doorSide',i.doorSide||'auto',[['auto','Automatica'],['sinistra','A sinistra'],['destra','A destra']])}`;
- return `<div class="qgrid2">${qSel('Modello sistema','qi_system',i.system,qSYSTEMS)}${qText('Descrizione','qi_description',i.description)}${qField(isCorner?'Larghezza lato A (mm)':'Larghezza (mm)','qi_width',i.width,1)}${qField('Altezza (mm)','qi_height',i.height,1)}${qField('Numero ante / moduli totale','qi_panels',i.panels,1)}${qSel('Direzione apertura / raccolta','qi_direction',i.direction,[['destra','Destra'],['sinistra','Sinistra']])}${doorFields}${openingFields}${cornerFields}${qField('Quantità configurazioni','qi_qty',i.qty,1)}${qSel('Tipo vetro','qi_glass',i.glass,qQUOTE_GLASS)}<div class="qfield"><span>Composizione selezionata</span><div class="qglass-caption" id="qGlassInfo">${qE(qGlassLabel(i))}</div></div>${qSel('Finitura vetro','qi_finish',i.finish,qFIN)}${qSel('Colore struttura','qi_structure',i.structure,qSTRUCTURES)}${qSel('Guarnizioni','qi_seal',i.seal,qSEALS)}${qSel('Colore maniglie','qi_handles',i.handles,qHANDLES)}</div><details class="qdetails"><summary>Lavorazioni e prezzi particolari</summary><div class="qgrid2">${qField('Metri molatura','qi_edge',i.edge)}${qField('Numero fori','qi_holes',i.holes,1)}${qField('Tagli / sagomature (quantità)','qi_cut',i.cut,1)}${qField('Accessori (quantità)','qi_hardware',i.hardware,1)}${qField('Altre lavorazioni (€)','qi_extra',i.extra)}${qField('Superficie fatturabile manuale (m²)','qi_billable',i.billable)}${qField('Prezzo manuale per configurazione (€; 0 = listino)','qi_manual',i.manual)}</div>${qText('Note di lavorazione','qi_notes',i.notes)}</details>`;
+ const modeOptions=[['fisso','Solo vetro fisso'],['scorrevole','Scorrevole'],['battente','Battente'],['fisso_battente','Fisso + porta battente'],['fisso_scorrevole','Fisso + porta scorrevole'],['impacchettabile','Impacchettabile']];
+ const modesA=i.cornerModeA||'scorrevole',modesB=i.cornerModeB||'fisso';
+ const showDoor=(m)=>/battente/.test(m)?'L’apertura battente è indicata in pianta con perno e arco; la posizione esatta delle cerniere dipende dal sistema.':/scorrevole/.test(m)?'La freccia indica il verso di scorrimento del sistema.':/impacchettabile/.test(m)?'La raccolta laterale è mostrata con ante a pacchetto.':'Le lastre sono fisse: non è prevista alcuna freccia.';
+ const card=(title,content,hint='')=>`<section style="border:1px solid #d4e5e9;border-radius:12px;padding:14px;background:#f5fafb;min-width:0"><div style="font-size:14px;font-weight:700;color:#173d4c;margin-bottom:10px">${title}</div><div class="qgrid2">${content}</div>${hint?`<p class="small" style="margin:10px 0 0">${hint}</p>`:''}</section>`;
+ const common=`${qSel('Modello sistema','qi_system',i.system,qSYSTEMS)}${qText('Descrizione','qi_description',i.description)}${qField(isCorner?'Larghezza lato A (mm)':'Larghezza totale (mm)','qi_width',i.width,1)}${qField('Altezza (mm)','qi_height',i.height,1)}`;
+ let special='';
+ if(isCorner){
+  const n=Math.max(2,Math.round(qN(i.panels)||2)),a=Math.max(1,Math.min(n-1,Math.round(qN(i.cornerSplit)||1)));
+  special=`<div style="grid-column:1/-1;display:grid;gap:12px">
+   ${card('1 · Geometria e ripartizione',`${qField('Larghezza lato B (mm)','qi_cornerWidthB',i.cornerWidthB||1500,1)}${qField('Moduli totali A + B','qi_panels',n,1)}${qField('Moduli lato A','qi_cornerSplit',a,1)}<div class="qfield"><span>Moduli lato B (automatico)</span><div id="qCornerBCount" style="font-weight:750;padding:11px 12px;background:white;border:1px solid #d4e5e9;border-radius:8px">${n-a}</div></div>`,'Le quote A e B sono indipendenti. Il totale delle lastre è la somma dei due lati.')}
+   ${card('2 · Lato A',`${qSel('Sistema lato A','qi_cornerModeA',modesA,modeOptions)}${qSel('Movimento lato A','qi_cornerDirectionA',i.cornerDirectionA||'destra',[['destra','Verso destra'],['sinistra','Verso sinistra']])}`,showDoor(modesA))}
+   ${card('3 · Lato B',`${qSel('Sistema lato B','qi_cornerModeB',modesB,modeOptions)}${qSel('Movimento lato B','qi_cornerDirectionB',i.cornerDirectionB||'destra',[['destra','Verso angolo'],['sinistra','Verso estremità libera']])}`,showDoor(modesB))}
+   ${card('4 · Porta e apertura',`${qSel('Lato della porta P','qi_cornerDoor',i.cornerDoor||'nessuna',[['nessuna','Nessuna porta'],['a','Lato A'],['b','Lato B']])}${qSel('Verso apertura battente','qi_opening',i.opening||'esterno',[['esterno','Verso esterno'],['interno','Verso interno']])}`,'La P identifica solo l’anta scelta; sui sistemi fissi non viene indicato un movimento. Le aperture sono schemi funzionali.')}
+   </div>`;
+ }else{
+  special=`${qField('Numero ante / moduli','qi_panels',i.panels,1)}${qSel('Direzione movimento','qi_direction',i.direction,[['destra','A destra'],['sinistra','A sinistra']])}${qSel('Porta / anta principale','qi_doorEnabled',i.doorEnabled||'auto',[['auto','Automatica per modello'],['si','Presente (P)'],['no','Assente']])}${qSel('Posizione porta P','qi_doorSide',i.doorSide||'auto',[['auto','Automatica'],['sinistra','A sinistra'],['destra','A destra']])}${i.system==='battente'?qSel('Apertura battente','qi_opening',i.opening||'esterno',[['esterno','Verso esterno'],['interno','Verso interno']]):''}`;
+ }
+ return `<div class="qgrid2">${common}${special}${qField('Quantità configurazioni','qi_qty',i.qty,1)}${qSel('Tipo vetro','qi_glass',i.glass,qQUOTE_GLASS)}<div class="qfield"><span>Composizione</span><div class="qglass-caption" id="qGlassInfo">${qE(qGlassLabel(i))}</div></div>${qSel('Finitura vetro','qi_finish',i.finish,qFIN)}${qSel('Colore struttura','qi_structure',i.structure,qSTRUCTURES)}${qSel('Guarnizioni','qi_seal',i.seal,qSEALS)}${qSel('Colore maniglie','qi_handles',i.handles,qHANDLES)}</div><details class="qdetails"><summary>Lavorazioni e prezzi particolari</summary><div class="qgrid2">${qField('Metri molatura','qi_edge',i.edge)}${qField('Numero fori','qi_holes',i.holes,1)}${qField('Tagli / sagomature','qi_cut',i.cut,1)}${qField('Accessori (quantità)','qi_hardware',i.hardware,1)}${qField('Altre lavorazioni (€)','qi_extra',i.extra)}${qField('Superficie fatturabile manuale (m²)','qi_billable',i.billable)}${qField('Prezzo manuale (€; 0 = listino)','qi_manual',i.manual)}</div>${qText('Note di lavorazione','qi_notes',i.notes)}</details>`;
 }
 function qClientOption(c){const text=[c.name,c.phone?.trim()?`Tel. ${c.phone.trim()}`:'',c.email?.trim()?c.email.trim():''].filter(Boolean).join(' — ');return S.clients.filter(x=>x.id!==c.id&&x.name===c.name&&String(x.phone||'')===String(c.phone||'')&&String(x.email||'')===String(c.email||'')).length?`${text} — ID ${String(c.id).slice(0,8)}`:text}
 function qClientFields(){
@@ -65,7 +78,7 @@ function qRender(){
  const p=$('qWorkspace');if(!p)return;
  const i=qSelected(),priceMissing=!QP.id;
  p.innerHTML=`<div class="panel qtop"><div class="qgrid3">${qText('Titolo preventivo','q_title',Q.title)}${qClientFields()}${qText('Riferimento / Cantiere','q_reference',Q.reference)}</div></div>${priceMissing?'<div class="qnotice">Listino non ancora configurato: imposta i prezzi di vetro, sistema e lavorazioni in <b>Listino prezzi</b> prima di emettere il preventivo.</div>':''}
- <div class="qlayout"><div class="panel"><div class="qflex"><h3>2. Parametri prodotto</h3><span class="small">Configurazione ${Q.current+1}</span></div>${qItemFields(i)}<div class="qflex" style="margin-top:12px"><button class="btn primary" onclick="qCommit()">${Q.edit?'＋ Aggiungi al preventivo':'✓ Aggiorna configurazione'}</button><button class="btn" onclick="qNewDraft()">Nuova configurazione</button></div></div><div class="panel"><h3>3. Prospetto e pianta (2D) <span style="font-size:11px;color:#176c73">· R2</span></h3><div id="qDrawing"></div><p class="small">Schema funzionale per sistema, aggiornato con direzione e numero moduli; non elaborato esecutivo.</p><div class="qbrief" id="qLive"></div></div></div>
+ <div class="qlayout"><div class="panel"><div class="qflex"><h3>2. Parametri prodotto</h3><span class="small">Configurazione ${Q.current+1}</span></div>${qItemFields(i)}<div class="qflex" style="margin-top:12px"><button class="btn primary" onclick="qCommit()">${Q.edit?'＋ Aggiungi al preventivo':'✓ Aggiorna configurazione'}</button><button class="btn" onclick="qNewDraft()">Nuova configurazione</button></div></div><div class="panel"><h3>3. Prospetto e pianta (2D) <span style="font-size:11px;color:#176c73">· R3</span></h3><div id="qDrawing"></div><p class="small">Schema funzionale per sistema, aggiornato con direzione e numero moduli; non elaborato esecutivo.</p><div class="qbrief" id="qLive"></div></div></div>
  <section class="panel" style="margin-top:16px"><div class="qflex"><h3>4. Elementi inclusi nel preventivo</h3><span class="small">${Q.items.length} configurazioni</span></div><div class="tablewrap"><table class="qtable"><thead><tr><th>Rif.</th><th>Sistema</th><th>Dimensioni</th><th>Ante e apertura</th><th>Superficie</th><th>Prezzo cad.</th><th>Totale</th><th>Azioni</th></tr></thead><tbody>${Q.items.map((x,j)=>{const v=qUnit(x);return `<tr><td><b>${j+1}</b></td><td>${qE(qSYSTEMS.find(s=>s[0]===x.system)?.[1]||x.system)}<div class="small">${qE(qGlassLabel(x))}</div></td><td>${x.system==='angolare'?`A ${x.width} / B ${x.cornerWidthB||1500}`:x.width} × ${x.height} mm</td><td>${x.panels} moduli · ${qE(x.direction)}</td><td>${v.bill.toFixed(3)} m²</td><td>${qEuro(v.unit)}</td><td>${qEuro(v.unit*x.qty)}</td><td><button class="btn" onclick="qEdit(${j})">Modifica</button> <button class="btn danger" onclick="qDelete(${j})">×</button></td></tr>`}).join('')||'<tr><td colspan="8" class="small">Nessuna configurazione aggiunta.</td></tr>'}</tbody></table></div></section>
  <div class="qlayout" style="margin-top:16px"><div class="panel"><h3>Costi aggiuntivi e condizioni</h3><div class="qgrid3">${qField('Manodopera (€)','q_labour',Q.labour)}${qField('Posa (€)','q_installation',Q.installation)}${qField('Trasporto (€)','q_transport',Q.transport)}${qField('Ricarico sui costi (%)','q_markup',Q.markup)}${qField('Sconto sul prezzo (%)','q_discount',Q.discount)}${qField('IVA (%)','q_vat',Q.vat)}</div>${qText('Note commerciali','q_notes',Q.notes)}${qSel('Stato','q_status',Q.status,[['bozza','Bozza'],['preventivo','Preventivo'],['accettato','Accettato']])}</div><div class="panel"><h3>Riepilogo economico</h3><div id="qSummary"></div><div class="qflex"><button class="btn primary" onclick="qSave()">Salva preventivo</button><button class="btn" onclick="qPrint()">Genera documento PDF</button></div></div></div>`;
  qBind();qDraw();qSummary();
@@ -86,7 +99,7 @@ function qBind(){
     }else{const wasSelected=!!Q.client;Q.client='';Q.clientFree=el.value;const tel=$('q_clientPhone'),mail=$('q_clientEmail');if(wasSelected){Q.clientPhone='';Q.clientEmail='';if(tel)tel.value='';if(mail)mail.value=''}if(tel)tel.readOnly=false;if(mail)mail.readOnly=false;}
    });return;
   }
-  const fn=()=>{qCapture();if(el.id==='qi_system'){qRender();return;}qDraw();qSummary();qUpdateGlassLabel()};
+  const fn=()=>{qCapture();if(['qi_system','qi_cornerModeA','qi_cornerModeB'].includes(el.id)){qRender();return;}qDraw();qSummary();qUpdateGlassLabel()};
   el.addEventListener('input',fn);el.addEventListener('change',fn);
  });
 }
@@ -96,7 +109,7 @@ function qUpdateGlassLabel(){let el=$('qGlassInfo');if(el)el.textContent=qGlassL
 // Le rappresentazioni dei meccanismi sono indicative: non sostituiscono i disegni del produttore.
 // REVISIONE SCHEMI 2D R2 — prospetti e piante specifici per sistema.
 // Unico SVG usato da anteprima e documento stampato. Misure di riferimento in mm.
-const Q_DIAGRAM_REV='R2 · 14/11/2026';
+const Q_DIAGRAM_REV='R3 · 14/11/2026';
 function qTechnicalDiagram(a, id='preview'){
  const system=a.system||'lastra';
  const n=Math.max(1,Math.min(16,Math.round(qN(a.panels)||1)));
@@ -145,39 +158,97 @@ function qTechnicalDiagram(a, id='preview'){
  push(`<defs><marker id="${unique}" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7Z" fill="${red}"/></marker></defs>`);
  push(`<rect x="0" y="0" width="600" height="510" rx="12" fill="${light}"/>`);
  push(txt(20,23,'SCHEMA FUNZIONALE 2D',13,cobalt,'start',700));
- push(txt(579,23,'REV. R2',9,subtle,'end',700));
+ push(txt(579,23,'REV. R3',9,subtle,'end',700));
  if(system==='angolare'){
-   const split=Math.max(1,Math.min(n-1,Math.round(qN(a.cornerSplit)||Math.ceil(n/2))));
-   const rightCount=Math.max(1,n-split), wb=Math.max(1,qN(a.cornerWidthB)||1500);
+   const countA=Math.max(1,Math.min(n-1,Math.round(qN(a.cornerSplit)||1)));
+   const countB=Math.max(1,n-countA),wb=Math.max(1,qN(a.cornerWidthB)||1500);
    const modes=[a.cornerModeA||'scorrevole',a.cornerModeB||'fisso'];
    const dirs=[a.cornerDirectionA||'destra',a.cornerDirectionB||'destra'];
    const door=a.cornerDoor||'nessuna';
-   // Due prospetti, ognuno con lunghezza e numerazione propria: nessuna falsa vista rettilinea.
-   const wa=255, wbpx=255, elevY=73, elevH=115;
-   const modeTitle=m=>({fisso:'FISSO',scorrevole:'SCORREVOLE',battente:'BATTENTE',fisso_battente:'FISSO + BATTENTE',fisso_scorrevole:'FISSO + SCORREVOLE',impacchettabile:'IMPACCHETTABILE'})[m]||m.toUpperCase();
-   elevation(22,elevY,wa,elevH,split,`LATO A · ${modeTitle(modes[0])}`,door==='a',dirs[0]==='sinistra'?'sinistra':'destra');
-   elevation(323,elevY,wbpx,elevH,rightCount,`LATO B · ${modeTitle(modes[1])}`,door==='b',dirs[1]==='sinistra'?'sinistra':'destra');
-   push(dimension(22,205,277,205,w));push(dimension(323,205,578,205,wb));
-   push(txt(20,245,'PIANTA A L · SISTEMI INDIPENDENTI',12,cobalt,'start',700));
-   const ox=157, oy=433, lenA=285, lenB=156;
-   push(ln(ox,oy,ox+lenA,oy,cobalt,4));push(ln(ox+lenA,oy,ox+lenA,oy-lenB,cobalt,4));
-   for(let i=0;i<split;i++){const cx=ox+lenA*(i+.5)/split;push(eleLabel(cx,oy-13,door==='a'&&i===(dirs[0]==='sinistra'?0:split-1)?'P':`A${i+1}`));if(i)push(ln(ox+lenA*i/split,oy-5,ox+lenA*i/split,oy+5,subtle,1.2));}
-   for(let i=0;i<rightCount;i++){const cy=oy-lenB*(i+.5)/rightCount;push(txt(ox+lenA+14,cy+3,door==='b'&&i===(dirs[1]==='sinistra'?0:rightCount-1)?'P':`B${i+1}`,10,cobalt,'start',700));if(i)push(ln(ox+lenA-5,oy-lenB*i/rightCount,ox+lenA+5,oy-lenB*i/rightCount,subtle,1.2));}
-   const drawSide=(which,mode,dir)=>{
-     if(mode==='fisso'){push(txt(which==='a'?ox+lenA/2:ox+lenA+60,which==='a'?oy+41:oy-lenB/2,'FISSO',10));return;}
-     const sliding=/scorrevole|impacchettabile/.test(mode);
-     const folding=mode==='impacchettabile';
-     const swinging=/battente/.test(mode);
-     if(which==='a'){
-       if(sliding){push(ln(ox+12,oy+11,ox+lenA-12,oy+11,subtle,1.6));push(arr(dir==='sinistra'?ox+lenA-35:ox+35,oy+32,dir==='sinistra'?ox+26:ox+lenA-26,oy+32));if(folding)for(let k=0;k<3;k++)push(ln((dir==='sinistra'?ox+18:ox+lenA-18)+k*5,oy+8,(dir==='sinistra'?ox+18:ox+lenA-18)+k*5,oy+31,red,2));}
-       if(swinging){swing(dir==='sinistra'?ox+14:ox+lenA-14,oy,55,dir,a.opening!=='interno');}
-     }else{
-       if(sliding){push(ln(ox+lenA-11,oy-12,ox+lenA-11,oy-lenB+12,subtle,1.6));push(arr(ox+lenA-34,dir==='sinistra'?oy-lenB+22:oy-22,ox+lenA-34,dir==='sinistra'?oy-22:oy-lenB+22));if(folding)for(let k=0;k<3;k++)push(ln(ox+lenA-7,oy-14-k*5,ox+lenA-29,oy-14-k*5,red,2));}
-       if(swinging){const hy=dir==='sinistra'?oy-lenB+15:oy-15;push(dot(ox+lenA,hy));push(ln(ox+lenA,hy,ox+lenA+(outward?45:-45),hy,red,3));push(`<path d="M${ox+lenA} ${hy-46} Q${ox+lenA+38} ${hy-46} ${ox+lenA+46} ${hy}" stroke="${red}" stroke-width="1.6" stroke-dasharray="4 4" fill="none"/>`);}
+   const title=m=>({fisso:'FISSO',scorrevole:'SCORREVOLE',battente:'BATTENTE',fisso_battente:'FISSO + BATTENTE',fisso_scorrevole:'FISSO + SCORREVOLE',impacchettabile:'IMPACCHETTABILE'})[m]||m.toUpperCase();
+   const dynamic=m=>m!=='fisso';
+   const isHinge=m=>m==='battente'||m==='fisso_battente';
+   const isSlide=m=>m==='scorrevole'||m==='fisso_scorrevole';
+   const isFold=m=>m==='impacchettabile';
+   const isDoor=(idx)=>door===(idx===0?'a':'b')&&modes[idx]!=='fisso';
+   const labelsFor=(idx)=>labels(idx===0?countA:countB,dirs[idx],isDoor(idx));
+   const A=labelsFor(0), B=labelsFor(1);
+   // Elevations have independent widths and independent identifiers.
+   const elev=(idx,x,pxW,actualW,count,names)=>{
+     const mode=modes[idx]; const doorPresent=isDoor(idx);
+     push(txt(x,48,`LATO ${idx?'B':'A'} · ${title(mode)}`,11,cobalt,'start',700));
+     push(`<rect x="${x}" y="71" width="${pxW}" height="112" rx="1" fill="${fill}" stroke="${cobalt}" stroke-width="2.2"/>`);
+     for(let i=0;i<count;i++){
+       const x0=x+i*pxW/count,mid=x0+pxW/count/2;
+       if(i)push(ln(x0,71,x0,183,subtle,1.2));
+       push(txt(mid,126,names[i],12,names[i]==='P'?red:cobalt,'middle',700));
+       if(doorPresent&&names[i]==='P')push(`<rect x="${x0+4}" y="75" width="${pxW/count-8}" height="104" fill="none" stroke="${red}" stroke-width="1.1" stroke-dasharray="4 3"/>`);
+     }
+     if(dynamic(mode)){
+       const sign=dirs[idx]==='sinistra'?-1:1;
+       const fx=x+pxW/2;push(arr(fx-sign*34,149,fx+sign*34,149));
+     }
+     push(dimension(x,204,x+pxW,204,actualW));
+     push(txt(x+pxW/2,220,`${count} mod. · ${dynamic(mode)?(dirs[idx]==='destra'?'destra':'sinistra'):'nessuna apertura'}`,9,subtle));
+   };
+   elev(0,20,255,w,countA,A);elev(1,325,255,wb,countB,B);
+   push(txt(20,252,'PIANTA ANGOLARE A 90° · VISTA DALL’ALTO',12,cobalt,'start',700));
+   // Cartesian plan: A runs horizontally to the corner, B runs upward.
+   const ox=116,oy=426,lenA=290,lenB=142,cx=ox+lenA,cy=oy-lenB;
+   push(ln(ox,oy,cx,oy,cobalt,3.4));push(ln(cx,oy,cx,cy,cobalt,3.4));
+   push(`<path d="M ${cx-19} ${oy} L ${cx-19} ${oy-19} L ${cx} ${oy-19}" stroke="${subtle}" fill="none" stroke-dasharray="3 3" stroke-width="1"/>`);
+   push(txt(ox+lenA*.5,oy+23,'LATO A',10,cobalt));
+   push(txt(cx+36,oy-lenB/2,'LATO B',10,cobalt));
+   const markers=(idx,number)=>{
+     let values=idx===0?A:B;
+     for(let j=0;j<number;j++){
+       if(idx===0){const x=ox+lenA*(j+.5)/number;push(txt(x,oy-12,values[j],10,values[j]==='P'?red:cobalt,'middle',700));if(j)push(ln(ox+lenA*j/number,oy-5,ox+lenA*j/number,oy+5,subtle,1.1));}
+       else {const y=oy-lenB*(j+.5)/number;push(txt(cx+11,y+3,values[j],10,values[j]==='P'?red:cobalt,'start',700));if(j)push(ln(cx-5,oy-lenB*j/number,cx+5,oy-lenB*j/number,subtle,1.1));}
      }
    };
-   drawSide('a',modes[0],dirs[0]);drawSide('b',modes[1],dirs[1]);
-   push(txt(20,483,'PIANTA: angolo 90° · lato A e lato B possono avere aperture differenti',10,cobalt,'start'));
+   markers(0,countA);markers(1,countB);
+   // Movement is generated separately for each side and depends on the actual system.
+   const movement=(idx)=>{
+     const mode=modes[idx],dir=dirs[idx],nside=idx?countB:countA;
+     if(mode==='fisso'){
+       if(idx===0)push(txt(ox+lenA/2,oy+48,'FISSO · NESSUN MOVIMENTO',9,subtle));
+       else push(txt(cx+30,cy-10,'FISSO',9,subtle));
+       return;
+     }
+     if(isHinge(mode)){
+       // Draw a perpendicular leaf and its quarter-circle rotation.
+       if(idx===0){const hingeX=dir==='sinistra'?ox+16:cx-16,sign=dir==='sinistra'?1:-1;
+         push(dot(hingeX,oy,3.7));push(ln(hingeX,oy,hingeX,oy+(outward?1:-1)*55,red,2.7));
+         push(`<path d="M ${hingeX+sign*55} ${oy} A 55 55 0 0 ${outward?1:0} ${hingeX} ${oy+(outward?1:-1)*55}" stroke="${red}" stroke-width="1.8" stroke-dasharray="5 4" fill="none"/>`);
+       }else{const hingeY=dir==='sinistra'?cy+14:oy-14,sgn=outward?1:-1;
+         push(dot(cx,hingeY,3.7));push(ln(cx,hingeY,cx+sgn*55,hingeY,red,2.7));
+         push(`<path d="M ${cx} ${hingeY-55} A 55 55 0 0 ${sgn===1?1:0} ${cx+sgn*55} ${hingeY}" stroke="${red}" stroke-width="1.8" stroke-dasharray="5 4" fill="none"/>`);
+       }
+       return;
+     }
+     if(isSlide(mode)){
+       if(idx===0){push(ln(ox+12,oy+8,cx-12,oy+8,subtle,1.4));push(arr(dir==='sinistra'?cx-36:ox+36,oy+38,dir==='sinistra'?ox+36:cx-36,oy+38));}
+       else{push(ln(cx-8,oy-12,cx-8,cy+12,subtle,1.4));push(arr(cx-36,dir==='sinistra'?cy+25:oy-25,cx-36,dir==='sinistra'?oy-25:cy+25));}
+       return;
+     }
+     if(isFold(mode)){
+       if(idx===0){const x=dir==='sinistra'?ox+20:cx-20,sign=dir==='sinistra'?1:-1;
+         for(let j=0;j<nside;j++){const xx=x+sign*j*12;push(ln(xx,oy+11+(j%2?16:0),xx+sign*12,oy+27-(j%2?16:0),red,2.2));}
+         push(arr(dir==='sinistra'?cx-42:ox+42,oy+58,dir==='sinistra'?ox+42:cx-42,oy+58));
+       }else{const y=dir==='sinistra'?cy+16:oy-16,sign=dir==='sinistra'?1:-1;
+         for(let j=0;j<nside;j++){const yy=y+sign*j*12;push(ln(cx-12-(j%2?16:0),yy,cx-28+(j%2?16:0),yy+sign*12,red,2.2));}
+         push(arr(cx-62,dir==='sinistra'?oy-35:cy+35,cx-62,dir==='sinistra'?cy+35:oy-35));
+       }
+       return;
+     }
+     if(mode==='impacchettabile'){
+       if(idx===0){const x=dir==='sinistra'?ox+20:cx-20;for(let j=0;j<nside;j++)push(ln(x+j*5,oy+12,x+j*5,oy+51,red,2));push(arr(dir==='sinistra'?cx-45:ox+45,oy+63,dir==='sinistra'?ox+45:cx-45,oy+63));}
+       else{const y=dir==='sinistra'?cy+16:oy-16;for(let j=0;j<nside;j++)push(ln(cx-15,y+j*5,cx-47,y+j*5,red,2));push(arr(cx-64,dir==='sinistra'?oy-25:cy+25,cx-64,dir==='sinistra'?cy+25:oy-25));}
+     }
+   };
+   movement(0);movement(1);
+   push(txt(20,479,`A: ${title(modes[0])} (${countA})   ·   B: ${title(modes[1])} (${countB})`,10,cobalt,'start',700));
+   push(txt(20,495,`Porta P: ${door==='nessuna'?'assente':'lato '+door.toUpperCase()}   ·   Battente: ${outward?'esterno':'interno'}`,9,subtle,'start'));
  }else{
    const main=labels(n,rawDoor,system==='fisso'||system==='lastra'?false:hasDoor);const ex=62, ey=62, ew=475, eh=140;
    elevation(ex,ey,ew,eh,n,`PROSPETTO · ${fmt(w)} × ${fmt(h)} mm`,system==='fisso'||system==='lastra'?false:hasDoor,rawDoor);
@@ -227,14 +298,14 @@ function qTechnicalDiagram(a, id='preview'){
    }
  }
  push(txt(300,502,'P = porta, cifre = lastre · rosso = apertura · schema indicativo, non esecutivo',9,subtle));
- return `<svg data-vetrostudio-diagram-revision="R2" class="q-technical-svg drawing-svg" viewBox="0 0 600 515" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schema ${escape(system)}, prospetto e pianta"><g>${el.join('')}</g></svg>`;
+ return `<svg data-vetrostudio-diagram-revision="R3" class="q-technical-svg drawing-svg" viewBox="0 0 600 515" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Schema ${escape(system)}, prospetto e pianta"><g>${el.join('')}</g></svg>`;
 }
 
 function qDraw(){
  const host=$('qDrawing');if(!host)return;
  const a=qSelected();host.innerHTML=qTechnicalDiagram(a,'interactive');
- const info=$('qLive'),n=Math.max(1,Math.floor(qN(a.panels)||1)),unit=qUnit(a);
- if(info)info.textContent=`${qSYSTEMS.find(v=>v[0]===a.system)?.[1]||a.system} · ${n} ${n===1?'modulo':'moduli'} · ${a.direction} · ${qGlassLabel(a)} · Superficie: ${unit.area.toFixed(3)} m² · Prezzo unitario: ${qEuro(unit.unit)}`;
+ const bCount=$('qCornerBCount');if(bCount){const p=Math.max(2,Math.round(qN(a.panels)||2));bCount.textContent=Math.max(1,p-Math.max(1,Math.min(p-1,Math.round(qN(a.cornerSplit)||1))))} const info=$('qLive'),n=Math.max(1,Math.floor(qN(a.panels)||1)),unit=qUnit(a);
+ if(info)info.textContent=a.system==='angolare'?`Angolare · A: ${a.cornerModeA||'scorrevole'} (${Math.max(1,Math.min(n-1,Math.round(qN(a.cornerSplit)||1)))} mod.) · B: ${a.cornerModeB||'fisso'} (${n-Math.max(1,Math.min(n-1,Math.round(qN(a.cornerSplit)||1)))} mod.) · ${qGlassLabel(a)} · ${unit.area.toFixed(3)} m² · ${QP.id?'Prezzo: '+qEuro(unit.unit):'Listino non configurato'}`:`${qSYSTEMS.find(v=>v[0]===a.system)?.[1]||a.system} · ${n} ${n===1?'modulo':'moduli'} · ${a.direction} · ${qGlassLabel(a)} · Superficie: ${unit.area.toFixed(3)} m² · ${QP.id?'Prezzo: '+qEuro(unit.unit):'Listino non configurato'}`;
 }
 
 function qSummary(){
@@ -243,7 +314,7 @@ function qSummary(){
  x.innerHTML=`<div class="qtotals">${row('Prodotti',t.goods)}${t.labour?row('Manodopera',t.labour):''}${t.installation?row('Posa',t.installation):''}${t.transport?row('Trasporto',t.transport):''}${t.markupPercent?row('Ricarico ('+t.markupPercent+'%)',t.markup):''}${t.discountPercent?`<div class="qdiscount"><span>Sconto (${t.discountPercent}%)</span><b>− ${qEuro(t.discount)}</b></div>`:''}${row('Imponibile',t.net)}${row('IVA ('+t.vatPercent+'%)',t.vat)}<div class="qgrand"><span>Totale IVA inclusa</span><b>${qEuro(t.total)}</b></div></div><p class="small">Il ricarico si applica ai costi; lo sconto si applica successivamente al prezzo prima dell’IVA. Verifica il listino prima dell’invio.</p>`;
 }
 
-function qCommit(){qCapture();let a=qSelected();if(!a.width||!a.height||!a.qty||!a.panels)return toast('Misure, quantità e numero ante devono essere maggiori di zero');if(a.system==='angolare'&&(qN(a.panels)<2||qN(a.cornerSplit)<1||qN(a.cornerSplit)>=qN(a.panels)||qN(a.cornerWidthB)<=0))return toast('Per la vetrata ad angolo servono almeno 2 moduli, almeno 1 per lato e una larghezza valida del lato B');if(Q.edit){Q.items.push({...Q.edit,priceSnapshot:structuredClone(QP.data)});Q.current=Q.items.length-1;Q.edit=null}else Q.items[Q.current]={...a};qRender()}
+function qCommit(){qCapture();let a=qSelected();if(!a.width||!a.height||!a.qty||!a.panels)return toast('Misure, quantità e numero ante devono essere maggiori di zero');if(a.system==='angolare'&&(qN(a.panels)<2||qN(a.cornerSplit)<1||qN(a.cornerSplit)>=qN(a.panels)||qN(a.cornerWidthB)<=0))return toast('Per la vetrata ad angolo servono almeno 2 moduli, almeno 1 per lato e una larghezza valida del lato B');if(a.system==='angolare'&&a.cornerDoor!=='nessuna'&&(a.cornerDoor==='a'?a.cornerModeA:a.cornerModeB)==='fisso')return toast('La porta P non può essere assegnata a un lato completamente fisso');if(Q.edit){Q.items.push({...Q.edit,priceSnapshot:structuredClone(QP.data)});Q.current=Q.items.length-1;Q.edit=null}else Q.items[Q.current]={...a};qRender()}
 function qNewDraft(){qCapture();Q.edit=qNew();qRender()}
 function qEdit(j){qCapture();Q.edit=null;Q.current=j;qRender()}
 function qDelete(j){qCapture();Q.items.splice(j,1);Q.current=Math.max(0,Math.min(Q.current,Q.items.length-1));Q.edit=Q.items.length?null:qNew();qRender()}
