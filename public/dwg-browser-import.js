@@ -260,6 +260,81 @@ async function readDwg(file) {
  if(!db.entities.length)throw Error('DWG convertito, ma nessuna entità nel Model Space. Le geometrie potrebbero essere solo all’interno di blocchi o nel Layout.');
  return db;
 }
+/*
+ * Hinge edge-notch detector. The manufacturer drawing can contain hundreds of
+ * unrelated circles/lines. Do not treat those as holes. A match must have:
+ *  - a unique pair of equal-radius reliefs in the same CAD layer;
+ *  - their centres vertically aligned;
+ *  - two independent horizontal cut edges sharing the same left boundary,
+ *    with endpoints near the round relief centres.
+ * The width is MEASURED from CAD line coordinates, never assumed from a model
+ * number, picture, or default template.
+ * The geometric union is a single border notch, NOT two drilled holes.
+ */
+function autoHingeNotch(database,clipper){
+ const ents=(database?.entities||[]).filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
+ const circles=[],lines=[],validLayers=new Set();
+ for(let i=0;i<ents.length;i++){
+  const e=ents[i],kind=String(e.type||'').toUpperCase(),layer=String(e.layer||'0');
+  if(layer.toUpperCase()==='FORMAT')continue;
+  if(kind==='ARC'||kind==='CIRCLE'){
+   const x=Number(e.center?.x),y=Number(e.center?.y),r=Number(e.radius);
+   if([x,y,r].every(Number.isFinite)&&r>=1&&r<=40)circles.push({x,y,r,layer,kind,index:i});
+  }else if(kind==='LINE'){
+   const a=pt(e.startPoint||e.start),b=pt(e.endPoint||e.end);
+   if(a.every(Number.isFinite)&&b.every(Number.isFinite)&&Math.abs(a[1]-b[1])<0.08&&Math.abs(a[0]-b[0])>8)lines.push({xmin:Math.min(a[0],b[0]),xmax:Math.max(a[0],b[0]),y:(a[1]+b[1])/2,layer,index:i});
+  }
+ }
+ // One centre can be represented by multiple ARC fragments: collapse exactly,
+ // but only within the same layer.
+ const reliefs=[];
+ for(const e of circles){
+  if(!reliefs.some(p=>p.layer===e.layer&&Math.hypot(p.x-e.x,p.y-e.y)<0.12&&Math.abs(p.r-e.r)<0.12))reliefs.push(e);
+ }
+ const possibilities=[];
+ for(let i=0;i<reliefs.length;i++)for(let j=i+1;j<reliefs.length;j++){
+  let a=reliefs[i],b=reliefs[j];if(a.layer!==b.layer||a.y>b.y)[a,b]=[b,a];
+  if(a.layer!==b.layer||Math.abs(a.x-b.x)>0.15||Math.abs(a.r-b.r)>0.15)continue;
+  const spacing=b.y-a.y,r=(a.r+b.r)/2;
+  if(spacing<r*3||spacing>250)continue;
+  // Both horizontal segments are part of the actual cutting geometry, not
+  // dimension text. Their ends may meet the CIRCLE centre OR its tangency.
+  const near=(line,relief)=>Math.min(Math.abs(line.y-relief.y),Math.abs(line.y-(relief.y+r)),Math.abs(line.y-(relief.y-r)))<0.2;
+  const low=lines.filter(l=>l.layer===a.layer&&near(l,a)&&l.xmin<a.x-r*1.5&&Math.abs(l.xmax-a.x)<r+0.4);
+  const high=lines.filter(l=>l.layer===a.layer&&near(l,b)&&l.xmin<b.x-r*1.5&&Math.abs(l.xmax-b.x)<r+0.4);
+  for(const l of low)for(const h of high){
+   if(Math.abs(l.xmin-h.xmin)>0.25)continue;
+   const depth=a.x-(l.xmin+h.xmin)/2;
+   if(depth<r*1.5||depth>180)continue;
+   const keys=[a.index,b.index,l.index,h.index];
+   possibilities.push({layer:a.layer,r,spacing,depth,centerX:(a.x+b.x)/2,lowY:a.y,highY:b.y,sourceIds:keys});
+  }
+ }
+ // Deduplicate the same geometry created from multi-arc CAD entities.
+ const distinct=[];
+ for(const p of possibilities){
+  if(!distinct.some(q=>Math.abs(p.centerX-q.centerX)<0.1&&Math.abs(p.lowY-q.lowY)<0.1&&Math.abs(p.highY-q.highY)<0.1&&Math.abs(p.depth-q.depth)<0.1&&Math.abs(p.r-q.r)<0.1))distinct.push(p);
+ }
+ if(distinct.length!==1)return {status:distinct.length?'ambiguous':'not_found',matches:distinct.length,reason:distinct.length?'Trovate più lavorazioni geometricamente compatibili: impossibile scegliere senza rischiare il taglio sbagliato.':'Non si trovano due raccordi circolari allineati insieme ai due segmenti orizzontali quotati della tasca. Nessun taglio generato.'};
+ const p=distinct[0],engine=clipper||root.polygonClipping;
+ if(!engine?.union)return {status:'blocked',reason:'Motore geometrico della lavorazione non disponibile'};
+ const rect=[[[p.centerX-p.depth,p.lowY],[p.centerX,p.lowY],[p.centerX,p.highY],[p.centerX-p.depth,p.highY],[p.centerX-p.depth,p.lowY]]];
+ function disk(cx,cy,r){
+  const n=Math.min(256,Math.max(48,Math.ceil(Math.PI/Math.acos(Math.max(-1,1-CHORD_ERROR/r)))));
+  const pts=Array.from({length:n},(_,i)=>[cx+r*Math.cos(2*Math.PI*i/n),cy+r*Math.sin(2*Math.PI*i/n)]);
+  pts.push(pts[0]);return [pts];
+ }
+ let union;
+ try{union=engine.union(rect,disk(p.centerX,p.lowY,p.r),disk(p.centerX,p.highY,p.r))}
+ catch(err){return {status:'blocked',reason:'Impossibile unire la tasca ai raccordi: '+err.message}}
+ if(!union||union.length!==1||union[0].length!==1)return {status:'blocked',reason:'La tasca non forma un unico contorno chiuso'};
+ const outline=cleanedPolygon(union[0][0]);
+ if(outline.length>300)return {status:'blocked',reason:'Contorno troppo dettagliato per l’editor corrente'};
+ const xs=outline.map(q=>q[0]),ys=outline.map(q=>q[1]),ox=(Math.min(...xs)+Math.max(...xs))/2,oy=(Math.min(...ys)+Math.max(...ys))/2;
+ const round=n=>Math.round(n*10000)/10000;
+ const cuts={holes:[],cutouts:[outline.map(q=>[round(q[0]-ox),round(q[1]-oy)])],origin:[round(ox),round(oy)]};
+ return {status:'matched',format:'DWG',cuts,dimensions:{diameter:round(p.r*2),centerSpacing:round(p.spacing),notchDepth:round(p.depth)},layer:p.layer,sourceIds:p.sourceIds,warning:'Scasso laterale con due raccordi circolari ricostruito da entità geometriche DWG. I raccordi sono campionati per anteprima DXF (errore geometrico teorico massimo 0,025 mm): obbligatoria verifica dimensionale sul disegno del produttore; non è un programma CNC.'};
+}
 function geometricCandidates(database){
  const entities=(database?.entities||[]).filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
  const candidates=[],issues=[],segments=[];
@@ -333,7 +408,7 @@ function cutsFromCandidates(report,ids){
 }
 async function inspectDwg(file){
  const db=await readDwg(file);
- return {...summarize(db),...geometricCandidates(db)};
+ return {...summarize(db),...geometricCandidates(db),autoNotch:autoHingeNotch(db)};
 }
 async function parseDwg(file,layers=[],unitConfirmed=false){
  return normalize(await readDwg(file),layers,unitConfirmed);
@@ -356,6 +431,6 @@ function toDxf(cuts) {
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
 }
-root.VSDWGImport={parseDwg,inspectDwg,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
-if(typeof module!=='undefined'&&module.exports)module.exports={geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf};
+root.VSDWGImport={parseDwg,inspectDwg,autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+if(typeof module!=='undefined'&&module.exports)module.exports={autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
