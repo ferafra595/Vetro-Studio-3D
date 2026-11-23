@@ -373,7 +373,7 @@ function autoOpenEdgeNotch(database) {
  // keeps the sampled outline; exported isolated cut can preserve true arcs.
  const signedBulge=(arc,from)=>{
   const p=[arc.c[0]+arc.r*Math.cos(arc.st),arc.c[1]+arc.r*Math.sin(arc.st)];
-  return round(Math.tan(arc.delta/4)*(matchesPoint(p,from)?1:-1));
+  return Math.round(Math.tan(arc.delta/4)*(matchesPoint(p,from)?1:-1)*1e12)/1e12;
  };
  const exactVertices=[m.edgeBottom,m.lowShelf,m.lowInner,m.highInner,m.highShelf,m.edgeTop];
  const exactBulges=[0,signedBulge(m.low,m.lowShelf),0,signedBulge(m.high,m.highInner),0,0];
@@ -555,10 +555,11 @@ function toDxf(cuts) {
  if(!cuts.holes.length&&!cuts.cutouts.length)throw Error('Non ci sono lavorazioni da esportare');
  const out=['0','SECTION','2','HEADER','9','$ACADVER','1','AC1015','9','$INSUNITS','70','4','0','ENDSEC',
   '0','SECTION','2','ENTITIES','999','VETROSTUDIO - pattern relativo al punto di fissaggio (0,0), non certificato per produzione'];
- const n=v=>{if(!Number.isFinite(Number(v)))throw Error('Coordinata DXF non valida');return Number(v).toFixed(4)};
+ const n=v=>{if(!Number.isFinite(Number(v)))throw Error('Coordinata DXF non valida');return Number(v).toFixed(6)};
+ const nb=v=>{if(!Number.isFinite(Number(v)))throw Error('Bulge DXF non valido');return Number(v).toFixed(12)};
  for(const hole of cuts.holes) {
   if(!(hole.r>0&&hole.r<=300))throw Error('Raggio foro non valido');
-  out.push('0','CIRCLE','8','GLASS_CUT','10',n(hole.x),'20',n(hole.y),'30','0','40',n(hole.r));
+  out.push('0','CIRCLE','100','AcDbEntity','8','GLASS_CUT','100','AcDbCircle','10',n(hole.x),'20',n(hole.y),'30','0','40',n(hole.r));
  }
  for(let i=0;i<cuts.cutouts.length;i++){
   const fallback=cuts.cutouts[i],exact=Array.isArray(cuts.exactPaths)?cuts.exactPaths[i]:null;
@@ -568,10 +569,10 @@ function toDxf(cuts) {
    exact.bulges.every(Number.isFinite);
   const points=validExact?exact.points:fallback;
   if(!Array.isArray(points)||points.length<3||points.length>300)throw Error('Contorno DXF non valido');
-  out.push('0','LWPOLYLINE','8','GLASS_CUT','90',String(points.length),'70','1');
+  out.push('0','LWPOLYLINE','100','AcDbEntity','8','GLASS_CUT','100','AcDbPolyline','90',String(points.length),'70','1');
   for(let j=0;j<points.length;j++){
    const [x,y]=points[j];out.push('10',n(x),'20',n(y));
-   if(validExact&&Math.abs(exact.bulges[j])>1e-12)out.push('42',n(exact.bulges[j]));
+   if(validExact&&Math.abs(exact.bulges[j])>1e-12)out.push('42',nb(exact.bulges[j]));
   }
  }
  out.push('0','ENDSEC','0','EOF');
