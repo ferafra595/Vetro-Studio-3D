@@ -1,0 +1,49 @@
+VETROSTUDIO 3D — IMPORTAZIONE SENZA SERVER CAD A PAGAMENTO
+
+INSTALLAZIONE:
+1. Carica su GitHub, dentro public/, i due file inclusi:
+   - technical-accessories.js (sostituisci la versione precedente)
+   - cad-browser-import.js (nuovo)
+2. Mantieni tutti gli altri file del gestionale, l'attuale binding D1 e il bucket R2 TECH_FILES.
+3. Pubblica il nuovo deployment Cloudflare Pages.
+4. Non configurare Docker, CAD_CONVERTER_URL o CAD_CONVERTER_TOKEN.
+   Il vecchio endpoint /api/technical-accessories/convert nel worker può rimanere inutilizzato.
+
+USO:
+1. In Libreria tecnica crea o apri una cerniera.
+2. Carica STEP (.step/.stp) per il modello 3D.
+3. Carica DXF ASCII, con $INSUNITS = 4, per forature/scassi.
+   Se il produttore ti ha fornito un DWG, carica anche l'originale per archiviarlo;
+   per estrarne i tagli occorre il corrispondente DXF esportato dal produttore o da un CAD.
+4. Se ci sono più layer, inserisci i nomi dei layer che contengono i tagli.
+5. Clicca "Analizza e salva in bozza". Lo STEP viene triangolato nel browser
+   con occt-import-js, e convertito in GLB. Il DXF viene letto nel browser.
+6. Verifica assolutamente la scala, il riferimento di origine, le posizioni dei tagli,
+   gli spessori e la compatibilità con il produttore, poi approva l'accessorio.
+7. L'accessorio approvato conserva le lavorazioni associate nel configuratore esistente.
+
+LIMITI REALI:
+- Questo aggiornamento NON CONVERTE DWG BINARI in DXF: gli originali vengono archiviati.
+- Per DWG serve un DXF ASCII fornito dal produttore oppure esportato dal programma CAD
+  della vetreria. Nessun taglio viene dedotto o inventato da un DWG non letto.
+- Per STEP viene caricato GRATUITAMENTE, via CDN pubblico, il motore open source
+  occt-import-js 0.0.23 in WebAssembly. La conversione avviene sul browser, senza
+  pagare un servizio CAD. Serve connessione Internet per scaricare la libreria.
+- La triangolazione GLB è per visualizzazione e non fornisce lavorazioni vetro.
+- DXF: supportati CIRCLE e LWPOLYLINE chiuse senza archi/bulge sul piano XY,
+  con unità esplicite in millimetri. Altri oggetti CAD vengono ignorati e segnalati.
+- Se il DXF contiene più layer, occorre specificare quali sono di taglio.
+- Il riferimento centrale del pattern deve essere validato dal vetraio.
+- Ogni importazione rimane in BOZZA e non costituisce validazione per CNC.
+- I file esistenti, schema D1, API e dati delle vetrerie non sono modificati.
+
+TEST LOCALI ESEGUITI:
+- Sintassi JavaScript di entrambi i file.
+- Parser DXF: filtro layer, controllo unità, foro e contorno chiuso.
+- GLB: formato corretto e lettura con trimesh di un modello sintetico.
+- NON eseguito test live STEP→GLB nel browser con il file GS-304: il runtime WASM
+  non era scaricabile nell'ambiente di prova. Occorre test sul sito Cloudflare.
+- NON eseguito test sul database/R2 effettivi dell'account dell'utente.
+
+Non distribuire file GLB o geometrie di taglio a macchinari produttivi senza
+verifica tecnica rispetto alle tavole ufficiali del produttore.
