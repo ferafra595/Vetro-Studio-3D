@@ -1,4 +1,4 @@
-/* VetroStudio - Libreria tecnica R4. Importazione sul computer utente: STEP -> GLB, DXF -> geometria. DWG binari archiviati, non interpretati. */
+/* VetroStudio - Libreria tecnica R8. STEP -> GLB; DWG -> DXF -> sagoma e forature (da verificare). */
 (()=>{'use strict';
 const E=x=>String(x??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const $=id=>document.getElementById(id);
@@ -19,7 +19,7 @@ function detail(){let it=S.selected,el=$('techDetail');if(!el||!it)return;let me
  el.innerHTML=`<div class="panel" style="margin:0"><div class="flex"><h3>${E(it.name)}</h3><span class="tag ${it.status==='approved'?'':'warning'}">${it.status==='approved'?'Approvato':'Da verificare'}</span></div>
  <div class="grid2"><label class="qfield">Codice<input id="taCode" value="${E(it.code)}"></label><label class="qfield">Nome<input id="taName" value="${E(it.name)}"></label><label class="qfield">Categoria<select id="taCat">${categories.map(([v,t])=>`<option value="${v}" ${it.category===v?'selected':''}>${t}</option>`).join('')}</select></label><label class="qfield">Produttore<input id="taManufacturer" value="${E(it.manufacturer||'')}"></label><label class="qfield">Spessore min. mm<input id="taMin" type="number" step="0.1" value="${it.glass_min}"></label><label class="qfield">Spessore max. mm<input id="taMax" type="number" step="0.1" value="${it.glass_max}"></label><label class="qfield">Prezzo €<input id="taPrice" type="number" step="0.01" value="${it.price}"></label></div>
  <h4>Importa accessorio e tagli (STEP + DWG)</h4>
- <p class="small">STEP per visualizzare la cerniera in 3D, DWG per ricavare i tagli. Solo fori circolari e polilinee chiuse rettilinee vengono convertiti; geometrie non supportate vengono bloccate. Importazione in bozza e approvazione dopo controllo dimensionale.</p>
+ <p class="small">STEP per visualizzare la cerniera in 3D, DWG per ricavare i tagli. Il DWG viene prima convertito internamente in DXF, poi vengono cercati i layer e riconosciuti fori, linee, archi e profili chiusi. Geometrie incompatibili vengono segnalate e non generano tagli. Verifica tutte le quote prima di approvare.</p>
  <div class="grid2"><label class="qfield">STEP · modello 3D<input id="taAutoSTEP" type="file" accept=".step,.stp"></label><label class="qfield">DWG · disegno dei tagli<input id="taAutoDWG" type="file" accept=".dwg"></label></div><div class="flex wrap" style="align-items:end;gap:8px;margin:12px 0">
   <button class="btn" id="taInspectButton" onclick="VSTech.inspectDwg()">Esamina DWG e individua i layer</button>
   <label class="qfield" style="flex:1;min-width:190px">Layer del taglio
