@@ -38,6 +38,15 @@ const server=http.createServer((req,res)=>{
     return typeof kernel.ReadStepFile==='function';
   });
   assert.equal(step,true);
+  await page.addScriptTag({url:'/vendor/polygon-clipping/polygon-clipping.umd.min.js'});
+  await page.addScriptTag({url:'/technical-glass-boolean.js'});
+  const notch=await page.evaluate(()=>{
+    const r=window.VSGlassCut.difference([[0,0],[100,0],[100,100],[0,100]],[[[-10,20],[20,20],[20,40],[-10,40]]]);
+    return {area:r.removedArea,voids:r.voids.length,edge:r.edgeNotch};
+  });
+  assert.ok(Math.abs(notch.area-400)<1e-6);
+  assert.equal(notch.voids,0);
+  assert.equal(notch.edge,true);
   assert.deepEqual(errors,[]);
   console.log('PASS: browser loaded LibreDWG and OCCT WASM successfully on same origin');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
