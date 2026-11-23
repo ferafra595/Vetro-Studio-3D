@@ -9,7 +9,7 @@ const files=['dwg','step','dxf','glb'];
 const request=async(url,method='GET',value)=>{const opts={method,credentials:'same-origin'};if(value!==undefined){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(value)}const r=await fetch('/api'+url,opts);const d=await r.json().catch(()=>({error:'Risposta server non valida'}));if(!r.ok)throw Error(d.error||'Errore server');return d};
 function notify(message){if(typeof toast==='function')toast(message);else alert(message)}
 const safeJson=x=>{try{return JSON.parse(x)}catch{return {holes:[],cutouts:[],origin:[0,0]}}};
-function library(){return `<style>.techLayout{display:grid;grid-template-columns:minmax(200px,290px) minmax(0,1fr);gap:16px}.techLayout .panel{max-width:none}.techLayout #techDetail .grid2{gap:12px}@media(max-width:900px){.techLayout{grid-template-columns:1fr}}.techLayout input[type=file]{font-size:12px}</style><div class="panel"><div class="flex wrap"><div><h2>Libreria tecnica accessori <span class="tag" id="taVersion" style="font-size:11px">R9 · selezione profili DWG</span></h2><p class="muted">Archivia i file originali e importa un pacchetto di lavorazioni e modello 3D. Ogni importazione deve essere verificata e approvata prima dell’utilizzo.</p></div><button class="btn primary" onclick="VSTech.create()">+ Nuovo accessorio</button></div><p class="small">I file appartengono alla singola vetreria. Una lavorazione importata rimane <b>Da verificare</b> finché non viene approvata. L'approvazione non sostituisce i controlli di produzione.</p><div class="techLayout"><div id="techList"></div><div id="techDetail"><p class="muted">Seleziona un accessorio.</p></div></div></div>`}
+function library(){return `<style>.techLayout{display:grid;grid-template-columns:minmax(200px,290px) minmax(0,1fr);gap:16px}.techLayout .panel{max-width:none}.techLayout #techDetail .grid2{gap:12px}@media(max-width:900px){.techLayout{grid-template-columns:1fr}}.techLayout input[type=file]{font-size:12px}</style><div class="panel"><div class="flex wrap"><div><h2>Libreria tecnica accessori <span class="tag" id="taVersion" style="font-size:11px">R10 · scasso cerniera automatico</span></h2><p class="muted">Archivia i file originali e importa un pacchetto di lavorazioni e modello 3D. Ogni importazione deve essere verificata e approvata prima dell’utilizzo.</p></div><button class="btn primary" onclick="VSTech.create()">+ Nuovo accessorio</button></div><p class="small">I file appartengono alla singola vetreria. Una lavorazione importata rimane <b>Da verificare</b> finché non viene approvata. L'approvazione non sostituisce i controlli di produzione.</p><div class="techLayout"><div id="techList"></div><div id="techDetail"><p class="muted">Seleziona un accessorio.</p></div></div></div>`}
 async function refresh(){try{S.items=(await request('/technical-accessories')).items;render()}catch(e){const list=$('techList');if(list)list.textContent=e.message;notify(e.message)}}
 function render(){const list=$('techList');if(!list)return;list.innerHTML=S.items.map(x=>`<button class="btn" style="width:100%;text-align:left;display:block;margin:7px 0;white-space:normal" onclick="VSTech.open('${x.id}')"><strong>${E(x.code)} — ${E(x.name)}</strong><span class="small" style="display:block">${E(x.category)} · ${x.status==='approved'?'Approvato':'Da verificare'}</span></button>`).join('')||'<p>Nessun accessorio ancora caricato.</p>'}
 async function create(){const code=prompt('Codice articolo (es. GS-304)');if(code===null)return;const name=prompt('Nome accessorio');if(name===null)return;try{const r=await request('/technical-accessories','POST',{code,name,category:'cerniera'});await refresh();await open(r.id)}catch(e){notify(e.message)}}
@@ -20,13 +20,9 @@ function detail(){let it=S.selected,el=$('techDetail');if(!el||!it)return;let me
  <div class="grid2"><label class="qfield">Codice<input id="taCode" value="${E(it.code)}"></label><label class="qfield">Nome<input id="taName" value="${E(it.name)}"></label><label class="qfield">Categoria<select id="taCat">${categories.map(([v,t])=>`<option value="${v}" ${it.category===v?'selected':''}>${t}</option>`).join('')}</select></label><label class="qfield">Produttore<input id="taManufacturer" value="${E(it.manufacturer||'')}"></label><label class="qfield">Spessore min. mm<input id="taMin" type="number" step="0.1" value="${it.glass_min}"></label><label class="qfield">Spessore max. mm<input id="taMax" type="number" step="0.1" value="${it.glass_max}"></label><label class="qfield">Prezzo €<input id="taPrice" type="number" step="0.01" value="${it.price}"></label></div>
  <h4>Importa accessorio e tagli (STEP + DWG)</h4>
  <p class="small">STEP per visualizzare la cerniera in 3D, DWG per ricavare i tagli. Il DWG viene prima convertito internamente in DXF, poi vengono cercati i layer e riconosciuti fori, linee, archi e profili chiusi. Geometrie incompatibili vengono segnalate e non generano tagli. Verifica tutte le quote prima di approvare.</p>
- <div class="grid2"><label class="qfield">STEP · modello 3D<input id="taAutoSTEP" type="file" accept=".step,.stp"></label><label class="qfield">DWG · disegno dei tagli<input id="taAutoDWG" type="file" accept=".dwg"></label></div><div class="flex wrap" style="align-items:end;gap:8px;margin:12px 0">
-  <button class="btn" id="taInspectButton" onclick="VSTech.inspectDwg()">Esamina DWG e individua i layer</button>
-  <label class="qfield" style="flex:1;min-width:190px">Layer del taglio
-   <select id="taLayerSelect" onchange="VSTech.selectLayer(this.value)"><option value="">Prima esamina il DWG</option></select>
-  </label>
- </div>
- <label class="qfield">Layer di taglio (in alternativa, separati da virgola)<input id="taAutoLayers" placeholder="seleziona sopra o inserisci il nome"></label>
+ <div class="grid2"><label class="qfield">STEP · modello 3D<input id="taAutoSTEP" type="file" accept=".step,.stp"></label><label class="qfield">DWG · disegno dei tagli<input id="taAutoDWG" type="file" accept=".dwg"></label></div><div class="actions" style="margin:12px 0"><button class="btn" id="taInspectButton" onclick="VSTech.inspectDwg()">Riconosci automaticamente la lavorazione DWG</button></div>
+ <p class="small">Il riconoscimento cerca la tasca rettangolare e i due raccordi circolari, ricavando quote e posizioni dal file. Non devi selezionare i cerchi o il contorno verde del vetro.</p>
+ <div style="display:none"><input id="taAutoLayers" value=""></div>
  <p class="small" id="taDwgLayers" role="status"></p><div id="taDwgCandidates" style="margin:10px 0"></div><details style="margin:10px 0"><summary class="small" style="cursor:pointer">Hai già un DXF? Importazione alternativa</summary><label class="qfield">DXF · lavorazioni vetro<input id="taAutoDXF" type="file" accept=".dxf"></label></details>
  <label class="small" style="display:flex;align-items:center;gap:9px;margin:10px 0"><input type="checkbox" id="taDWGMM" style="width:16px;height:16px;flex:none;margin:0"> Confermo che il DWG è quotato in millimetri, se il file non riporta le unità</label><p class="small">Lettore gratuito LibreDWG, licenza GPL-3.0: verificare gli obblighi prima dell’uso commerciale.</p><div class="actions"><button class="btn primary" id="taAutoButton" onclick="VSTech.autoImport()">Analizza e salva in bozza</button></div>
  <p id="taAutoReport" class="small" role="status" aria-live="polite"></p>
@@ -132,22 +128,14 @@ function chooseCandidate(id,checked){
 }
 function renderCandidates(){
  const el=$('taDwgCandidates'),report=S.dwgAnalysis;if(!el||!report)return;
- const candidates=report.candidates||[],issues=report.issues||[];
- let html='<div style="border:1px solid #bed7dd;border-radius:10px;padding:12px;background:#f7fbfc"><strong>Profili candidati del DWG</strong><p class="small">Questo file mescola più elementi. Nessun taglio viene scelto automaticamente. Seleziona solamente i profili che corrispondono al disegno del produttore; le dimensioni si riferiscono agli ingombri delle entità.</p>';
- if(!candidates.length){
-  html+='<p class="small" style="color:#964b20">Nessun profilo chiuso autonomo riconosciuto. Il taglio potrebbe essere composto da linee e archi separati, spline o blocchi INSERT. Non esportare un DXF senza una verifica del disegno.</p>';
+ const notch=report.autoNotch;
+ if(notch?.status==='matched'){
+  const cut=notch.cuts.cutouts[0],preview=candidateSvg({kind:'contorno',points:cut});
+  const dim=notch.dimensions;
+  el.innerHTML='<div style="border:1px solid #c2dcdf;background:#f3faf9;border-radius:10px;padding:14px"><strong>Scasso riconosciuto automaticamente</strong><p class="small">Una tasca rettangolare con due raccordi circolari: è un unico taglio laterale, non tre fori separati. Il contorno del vetro non viene importato.</p><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">'+preview+'<div><b>Ø '+dim.diameter+' mm</b><br>Interasse: '+dim.centerSpacing+' mm<br>Profondità tasca: '+dim.notchDepth+' mm<br>Layer: '+E(notch.layer)+'</div></div><p class="small">BOZZA: controlla sul disegno del produttore queste tre quote e l’orientamento prima di approvare. Le curve DXF sono approssimate per l’anteprima e non per la CNC.</p></div>';
  }else{
-  html+='<p id="taCandidateCount" class="small">0 elementi selezionati · bozza da verificare</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:10px;max-height:360px;overflow:auto">';
-  for(const item of candidates){
-   const id=E(item.id);
-   html+='<label style="display:flex;gap:8px;align-items:center;border:1px solid #d3e5e8;padding:7px;border-radius:9px;cursor:pointer"><input style="width:17px;height:17px;flex:none" type="checkbox" onchange="VSTech.chooseCandidate(\''+id+'\',this.checked)">'+candidateSvg(item)+'<span class="small"><b>'+E(item.kind)+' #'+id+'</b><br>Layer '+E(item.layer)+'<br>'+item.width+' × '+item.height+' mm</span></label>';
-  }
-  html+='</div>';
+  el.innerHTML='<div style="border:1px solid #eed2be;background:#fffaf4;border-radius:10px;padding:13px"><strong>Taglio automatico non disponibile per questo disegno</strong><p class="small">'+E(notch?.reason||'Nessuna lavorazione univoca riconosciuta')+'</p><p class="small">Nessun taglio verrà generato o salvato. Il file può contenere archi non collegati, blocchi o rappresentazioni non eseguibili. Non scegliere manualmente linee o simboli che sembrano uguali al taglio.</p></div>';
  }
- if(issues.length)html+='<p class="small">'+issues.length+' entità geometriche non utilizzabili direttamente (aperte, curve non gestite o fuori scala). Non vengono trasformate in tagli.</p>';
- if(report.truncated)html+='<p class="small">Elenco limitato a 150 elementi: importazione manuale bloccata per evitare selezioni incomplete.</p>';
- html+='</div>';
- el.innerHTML=html;
 }
 async function inspectDwg(){
  const f=$('taAutoDWG')?.files?.[0];if(!f)return notify('Seleziona prima il file DWG del produttore');
@@ -157,13 +145,10 @@ async function inspectDwg(){
   const engine=await loadDWGEngine(),report=await engine.inspectDwg(f);
   S.dwgAnalysis={...report,file:f};
   const rows=Object.entries(report.layers||{}).sort((a,b)=>b[1].total-a[1].total);
-  const select=$('taLayerSelect');
-  if(select)select.innerHTML='<option value="">Seleziona il layer del profilo</option>'+rows.map(([n,stats])=>'<option value="'+E(n)+'">'+E(n)+' · '+stats.total+' entità</option>').join('');
   const dest=$('taDwgLayers');
   if(dest)dest.textContent='Unità: '+(report.units===4?'mm':report.units===0||report.units==='unknown'?'non dichiarate':report.units)+' · Entità: '+report.entities+' · Layer: '+rows.map(([n,s])=>n+' ('+Object.entries(s.types).map(([t,q])=>t+' '+q).join(', ')+')').join(' | ');
-  if(rows.length===1){select.value=rows[0][0];selectLayer(rows[0][0])}
   renderCandidates();
-  notify('DWG analizzato: scegli i singoli profili di lavorazione, non tutto il layer misto.');
+  notify(report.autoNotch?.status==='matched'?'Scasso laterale riconosciuto. Controlla le quote e salva in bozza.':'DWG letto, ma lo scasso non è stato riconosciuto con certezza. Nessun taglio verrà creato.');
  }catch(err){const dest=$('taDwgLayers');if(dest)dest.textContent=err.message;notify('Impossibile esaminare DWG: '+err.message)}
  finally{if(b){b.disabled=false;b.textContent='Esamina DWG e individua i layer'}}
 }
@@ -182,11 +167,10 @@ async function autoImport(){
   if(dwg&&dxf)throw Error('Seleziona DWG oppure DXF per i tagli, non entrambi.');
   if(dwg) {
    await loadDWGEngine();
-   if(!S.dwgAnalysis||S.dwgAnalysis.file!==dwg)throw Error('Prima premi Esamina DWG e individua i layer, poi seleziona i singoli profili candidati.');
-   if(S.dwgAnalysis.truncated)throw Error('Troppi candidati: impossibile assicurare una selezione completa.');
-   if(S.dwgAnalysis.units!==4&&!$('taDWGMM')?.checked)throw Error('Conferma che il DWG usa millimetri in base alla documentazione.');
-   if(S.selectedCandidates.size===0)throw Error('Seleziona manualmente almeno un profilo candidato. Il layer completo contiene quote e componenti non destinati al taglio.');
-   result=window.VSDWGImport.cutsFromCandidates(S.dwgAnalysis,[...S.selectedCandidates]);
+   if(!S.dwgAnalysis||S.dwgAnalysis.file!==dwg)throw Error('Premi prima Riconosci automaticamente la lavorazione DWG.');
+   if(S.dwgAnalysis.units!==4&&!$('taDWGMM')?.checked)throw Error('Conferma i millimetri sulla scheda tecnica del produttore.');
+   if(S.dwgAnalysis.autoNotch?.status!=='matched')throw Error('Il DWG non contiene una lavorazione riconoscibile con sicurezza: '+(S.dwgAnalysis.autoNotch?.reason||'nessuna corrispondenza')+'. Non sono stati generati tagli.');
+   result=S.dwgAnalysis.autoNotch;
    warnings.push(result.warning);
   }
   if(dxf){const text=await dxf.text();
@@ -251,5 +235,5 @@ async function extractDXF(){try{const r=await fetch('/api/technical-accessories/
 function renderPicker(){return `<div><h3>Inserisci accessorio tecnico</h3><p class="small">Seleziona una lastra, poi indica il punto di fissaggio misurato dal bordo sinistro e inferiore.</p><label class="label">Accessorio approvato</label><select class="field" id="pickTech">${S.items.filter(t=>t.status==='approved').map(t=>`<option value="${t.id}">${E(t.code)} · ${E(t.name)} (${t.glass_min}–${t.glass_max} mm)</option>`).join('')}</select><div class="grid2"><label>X sul vetro (mm)<input class="field" type="number" id="pickX" value="300"></label><label>Y sul vetro (mm)<input class="field" type="number" id="pickY" value="500"></label></div><div class="actions"><button class="btn primary" onclick="VSTech.place()">Applica lavorazioni e inserisci 3D</button></div></div>`}
 async function picker(){if(!window.VSTechBridge?.selected())return notify('Seleziona prima una lastra nel configuratore 3D');try{S.items=(await request('/technical-accessories')).items;if(!S.items.some(t=>t.status==='approved'))return notify('Nessun accessorio approvato: aggiungine uno in Libreria tecnica');openModal(renderPicker());const o=window.VSTechBridge.selected();$('pickX').value=Math.round(o.w/2);$('pickY').value=Math.round(o.h/2)}catch(e){notify(e.message)}}
 async function place(){try{const id=$('pickTech').value;const row=S.items.find(t=>t.id===id);const d=await request('/technical-accessories/'+id);const cuts=safeJson(d.item.cut_spec);const res=window.VSTechBridge.place({...row,cut_spec:cuts,model_meta:safeJson(d.item.model_meta)},Number($('pickX').value),Number($('pickY').value));if(!res.ok)throw Error(res.error);closeModal();notify('Accessorio inserito e lavorazioni applicate al vetro')}catch(e){notify(e.message)}}
-window.VSTech={version:'R9-candidates-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,chooseCandidate,selectLayer,exportDxf,picker,place,parseDXF};
+window.VSTech={version:'R10-auto-notch-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,chooseCandidate,selectLayer,exportDxf,picker,place,parseDXF};
 })();
