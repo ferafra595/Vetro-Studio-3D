@@ -66,3 +66,36 @@ test('Contorno chiuso esportato e reimportato come sagoma',()=>{
  assert.equal(result.cuts.cutouts.length,1);
  assert.equal(result.cuts.cutouts[0].length,4);
 });
+
+test('Riconosce una sagoma costruita da segmenti LINE indipendenti',()=>{
+ const a=(x,y)=>({x,y,z:0});
+ const lines=[[[0,0],[30,0]],[[30,30],[0,30]],[[30,0],[30,30]],[[0,30],[0,0]]].map(([p,q])=>({type:'LINE',layer:'CUT',startPoint:a(...p),endPoint:a(...q)}));
+ const result=normalize(base(lines));
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.cuts.cutouts[0].length,4);
+});
+test('Riconosce un arco di polilinea tramite bulge positivo',()=>{
+ const item={type:'LWPOLYLINE',layer:'CUT',flag:1,elevation:0,vertices:[{x:0,y:0,bulge:1},{x:16,y:0,bulge:0},{x:16,y:16,bulge:0},{x:0,y:16,bulge:0}]};
+ const result=normalize(base([item]));
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.curved,true);
+ assert.ok(result.cuts.cutouts[0].length>4);
+});
+test('Collega LINE e ARC in un unico profilo chiuso',()=>{
+ const line=(p,q)=>({type:'LINE',layer:'CUT',startPoint:{x:p[0],y:p[1],z:0},endPoint:{x:q[0],y:q[1],z:0}});
+ const arc={type:'ARC',layer:'CUT',center:{x:10,y:0,z:0},radius:10,startAngle:0,endAngle:Math.PI};
+ const result=normalize(base([line([0,0],[20,0]),arc]));
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.curved,true);
+});
+test('Un arco aperto senza continuità non produce un taglio',()=>{
+ const arc={type:'ARC',layer:'CUT',center:{x:0,y:0,z:0},radius:10,startAngle:0,endAngle:Math.PI};
+ assert.throws(()=>normalize(base([arc])),/aperti/);
+});
+test('Mostra statistiche delle entità anche quando non ci sono fori',()=>{
+ const data=base([{type:'LINE',layer:'GLASS',startPoint:{x:0,y:0},endPoint:{x:1,y:0}},{type:'DIMENSION',layer:'QUOTES'}]);
+ const result=normalize;
+ const summary=cadModule.exports.summarize(data);
+ assert.equal(summary.layers.GLASS.types.LINE,1);
+ assert.equal(summary.layers.QUOTES.types.DIMENSION,1);
+});
