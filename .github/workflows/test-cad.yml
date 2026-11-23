@@ -1,0 +1,26 @@
+name: Verifica importazione CAD
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/dwg-browser-import.js'
+      - 'public/technical-accessories.js'
+      - 'public/cad-browser-import.js'
+      - 'tests/**'
+      - '.github/workflows/test-cad.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Sintassi JavaScript
+        run: |
+          node --check public/dwg-browser-import.js
+          node --check public/cad-browser-import.js
+          node --check public/technical-accessories.js
+      - name: Test di sicurezza geometrica DWG
+        run: node --test tests/dwg-import.test.cjs
