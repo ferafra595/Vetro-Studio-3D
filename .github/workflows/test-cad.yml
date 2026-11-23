@@ -9,6 +9,8 @@ on:
       - 'public/cad-browser-import.js'
       - 'tests/**'
       - 'public/vendor/**'
+      - 'public/studio.js'
+      - 'public/technical-glass-boolean.js'
       - '.github/workflows/test-cad.yml'
   workflow_dispatch:
 jobs:
@@ -24,6 +26,8 @@ jobs:
           node --check public/dwg-browser-import.js
           node --check public/cad-browser-import.js
           node --check public/technical-accessories.js
+          node --check public/technical-glass-boolean.js
+          node --check public/studio.js
       - name: Test di sicurezza geometrica DWG
         run: node --test tests/dwg-import.test.cjs
       - name: Verifica la presenza delle librerie CAD locali
@@ -33,7 +37,10 @@ jobs:
           test -s public/vendor/libredwg/dist/libredwg-web.js
           test -s public/vendor/occt/occt-import-js.wasm
           test -s public/vendor/occt/occt-import-js.js
+          test -s public/vendor/polygon-clipping/polygon-clipping.umd.min.js
       - name: Installa browser smoke runner
-        run: npm install --no-save --package-lock=false playwright-core@1.56.1
+        run: npm install --no-save --package-lock=false playwright-core@1.56.1 polygon-clipping@0.15.7
+      - name: Verifica scassi e forature del vetro
+        run: node --test tests/glass-cut.test.cjs
       - name: Esegui i motori WASM nel browser
         run: node tests/cad-browser-smoke.cjs
