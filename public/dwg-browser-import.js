@@ -243,7 +243,7 @@ function parseConvertedDxf(text){
  }
  return {header:{insunits:units},entities:result,sourceInfo:{haveHeader,haveEntities,source:'LibreDWG DWG→DXF',count:result.length}};
 }
-async function readDwg(file) {
+async function convertOriginalDwgToDxf(file) {
  if(!file||!/\.dwg$/i.test(file.name)||file.size<128||file.size>12*1024*1024)throw Error('Seleziona un DWG valido (max 12 MB)');
  const buf=new Uint8Array(await file.arrayBuffer());
  if(!/^AC10\d\d/.test(new TextDecoder().decode(buf.subarray(0,6))))throw Error('Firma DWG non riconosciuta');
@@ -251,13 +251,16 @@ async function readDwg(file) {
    parser:await lib.LibreDwg.create(BASE)
  })).catch(err=>{engine=null;throw Error('Motore LibreDWG non disponibile: '+err.message)});
  const {parser}=await engine;
- // Use the actual published LibreDWG DWG-to-DXF API; do not call convert(ptr).
- const converted=parser.dwg_write_dxf(buf);
- if(!converted||converted.length<20)throw Error('LibreDWG non è riuscito a convertire il DWG in DXF. Il file può essere incompatibile o danneggiato.');
- const decoded=new TextDecoder('utf-8').decode(converted);
- if(!decoded.includes('SECTION'))throw Error('La conversione LibreDWG non ha restituito un DXF ASCII valido');
- const db=parseConvertedDxf(decoded);
- if(!db.entities.length)throw Error('DWG convertito, ma nessuna entità nel Model Space. Le geometrie potrebbero essere solo all’interno di blocchi o nel Layout.');
+ const bytes=parser.dwg_write_dxf(buf);
+ if(!bytes||bytes.length<20)throw Error('LibreDWG non è riuscito a convertire il DWG in DXF.');
+ const converted=new TextDecoder('utf-8').decode(bytes);
+ if(!converted.includes('SECTION')||!converted.includes('ENTITIES'))throw Error('DXF ASCII incompleto: impossibile utilizzare la conversione');
+ return converted;
+}
+async function readDwg(file) {
+ const converted=await convertOriginalDwgToDxf(file);
+ const db=parseConvertedDxf(converted);
+ if(!db.entities.length)throw Error('DWG convertito, ma nessuna entità nel Model Space.');
  return db;
 }
 /*
@@ -449,6 +452,6 @@ function toDxf(cuts) {
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
 }
-root.VSDWGImport={parseDwg,inspectDwg,autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+root.VSDWGImport={convertOriginalDwgToDxf,parseDwg,inspectDwg,autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
 if(typeof module!=='undefined'&&module.exports)module.exports={autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
