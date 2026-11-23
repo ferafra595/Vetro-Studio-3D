@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const path=require('node:path');
 const cadModule={exports:{}};
-vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/dwg-browser-import.js'),'utf8'),{module:cadModule,globalThis:{}});
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/dwg-browser-import.js'),'utf8'),{module:cadModule,globalThis:{},URL});
 const {normalize}=cadModule.exports;
 const base=(entities,unit=4)=>({header:{insunits:unit},entities});
 const circle=(x,y,r,layer='CUT')=>({type:'CIRCLE',layer,center:{x,y,z:0},radius:r,extrusionDirection:{z:1}});
