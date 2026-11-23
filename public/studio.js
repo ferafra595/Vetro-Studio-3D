@@ -149,22 +149,27 @@ function insidePanel(owner,x,y,r=0){const poly=owner.shape||[[0,0],[owner.w,0],[
  const inside=(px,py)=>{let c=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>py)!==(b[1]>py)&&px<(b[0]-a[0])*(py-a[1])/(b[1]-a[1])+a[0])c=!c}return c};
  return [[x-r,y],[x+r,y],[x,y-r],[x,y+r],[x,y]].every(p=>inside(...p));
 }
+function technicalGlassShape(o,additional=[]){
+ const outer=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];
+ const all=[...technicalCutouts(o),...additional];
+ if(!all.length)return {outline:outer,voids:[],edgeNotch:false,removedArea:0};
+ if(!window.VSGlassCut?.difference)throw Error('Motore di sottrazione dei tagli non caricato');
+ return window.VSGlassCut.difference(outer,all);
+}
 function technicalPatternValid(owner,spec,x,y){
  if(!Number.isFinite(x)||!Number.isFinite(y))return 'Coordinate non valide';
- for(const h of spec.holes||[]){const cx=x+N(h.x),cy=y+N(h.y),r=N(h.r);if(!(r>0)||!insidePanel(owner,cx,cy,r))return 'Una foratura esce dal vetro: sposta l’accessorio';}
- const polyOuter=owner.shape||[[0,0],[owner.w,0],[owner.w,owner.h],[0,owner.h]];
- for(const poly of spec.cutouts||[]){
-  if(poly.length<3)return 'Contorno di taglio non chiuso';
-  const points=poly.map(q=>[x+N(q[0]),y+N(q[1])]);
-  if(!window.VSGeometry.validate(points).ok)return 'Contorno di taglio non valido';
-  for(const q of points)if(!insidePanel(owner,q[0],q[1],0.5))return 'Un contorno esce dalla lastra';
-  for(let i=0;i<points.length;i++)for(let j=0;j<polyOuter.length;j++){
-   if(window.VSGeometry.segmentsIntersect(points[i],points[(i+1)%points.length],polyOuter[j],polyOuter[(j+1)%polyOuter.length]))return 'Il contorno di taglio interseca il bordo del vetro';
-  }
-  for(const h of [...(owner.holes||[]),...technicalHoles(owner),...(spec.holes||[]).map(h=>({x:x+N(h.x),y:y+N(h.y),r:N(h.r)}))]){
-   if(window.VSGeometry.pointInside([h.x,h.y],points))return 'Foro sovrapposto a contorno di taglio';
-  }
+ const added=(spec.cutouts||[]).map(poly=>poly.map(p=>[x+N(p[0]),y+N(p[1])]));
+ const existing=technicalHoles(owner),newHoles=(spec.holes||[]).map(h=>({x:x+N(h.x),y:y+N(h.y),r:N(h.r)}));
+ for(const h of newHoles)if(!(h.r>0)||!insidePanel(owner,h.x,h.y,h.r))return 'Una foratura esce dal vetro: sposta l’accessorio';
+ let result;
+ try{result=technicalGlassShape(owner,added)}
+ catch(err){return 'Taglio non applicabile: '+err.message}
+ for(const h of [...existing,...newHoles]){
+  const check=window.VSGeometry.validate(result.outline,[h]);
+  if(!check.ok)return 'Una foratura tocca uno scasso o il bordo: '+check.error;
+  if(result.voids.some(poly=>window.VSGeometry.pointInside([h.x,h.y],poly)))return 'Una foratura coincide con uno scasso';
  }
+ // The boolean engine rejects disconnected pieces. The CAD 2D and 3D render from this same derived outline.
  return null;
 }
 function placeTechnicalAccessory(item,x,y){const owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
@@ -181,7 +186,7 @@ function placeTechnicalAccessory(item,x,y){const owner=model().objects.find(o=>o
 }
 function createMesh(o){
  const Three=T(),glass=['glass','mirror'].includes(o.kind),building=['wall','floor','stair','balcony'].includes(o.kind);let geo;
- if(glass&&(o.shape?.length>=3||model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))){let outline=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];let s=new Three.Shape();s.moveTo(outline[0][0]-o.w/2,outline[0][1]-o.h/2);outline.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of technicalHoles(o)){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}for(const poly of technicalCutouts(o)){let path=new Three.Path();path.moveTo(poly[0][0]-o.w/2,poly[0][1]-o.h/2);for(const p of poly.slice(1))path.lineTo(p[0]-o.w/2,p[1]-o.h/2);path.closePath();s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
+ if(glass&&(o.shape?.length>=3||model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))){const profile=technicalGlassShape(o);let outline=profile.outline;let s=new Three.Shape();s.moveTo(outline[0][0]-o.w/2,outline[0][1]-o.h/2);outline.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of technicalHoles(o)){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}for(const poly of profile.voids){let path=new Three.Path();path.moveTo(poly[0][0]-o.w/2,poly[0][1]-o.h/2);for(const p of poly.slice(1))path.lineTo(p[0]-o.w/2,p[1]-o.h/2);path.closePath();s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
  else geo=new Three.BoxGeometry(Math.max(1,o.w),Math.max(1,o.h),Math.max(1,o.d));
  let material;
  if(glass){material=new Three.MeshPhysicalMaterial({color:o.kind==='mirror'?0xa8bec8:0xc4eaf0,metalness:o.kind==='mirror'?.78:0,roughness:o.kind==='mirror'?.08:.065,transmission:o.kind==='mirror'?0:.55,transparent:o.kind!=='mirror',opacity:1,ior:1.48,thickness:Math.max(1,o.d),side:Three.DoubleSide,clearcoat:1,clearcoatRoughness:.04,depthWrite:true});
@@ -340,8 +345,9 @@ function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-
 function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
 window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},place:placeTechnicalAccessory};
 window.VSCADBridge={
- selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));return o?{...structuredClone(o),holes:technicalHoles(o),cutouts:technicalCutouts(o)}:null},
+ selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch}},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
+ if(model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))return {ok:false,error:'Per modificare il profilo base rimuovi prima gli accessori tecnici; gli scassi sono calcolati automaticamente.'};
  const manualHoles=(holes||[]).filter(h=>!h.technicalInstanceId);const r=window.VSGeometry.normalize(outline,manualHoles);if(!r.ok)return r;
  remember();const left=o.x-o.w/2,bottom=o.y-o.h/2;
  o.x=mm(left+r.bounds.minX+r.width/2);o.y=mm(bottom+r.bounds.minY+r.height/2);o.w=mm(r.width);o.h=mm(r.height);o.shape=r.points;o.holes=r.holes;for(const a of model().objects)if(a.attachTo===o.id&&a.technicalSpec){a.localX=mm(a.localX-r.bounds.minX);a.localY=mm(a.localY-r.bounds.minY);linkedAccessoryPosition(a);}
