@@ -9,7 +9,7 @@ const files=['dwg','step','dxf','glb'];
 const request=async(url,method='GET',value)=>{const opts={method,credentials:'same-origin'};if(value!==undefined){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(value)}const r=await fetch('/api'+url,opts);const d=await r.json().catch(()=>({error:'Risposta server non valida'}));if(!r.ok)throw Error(d.error||'Errore server');return d};
 function notify(message){if(typeof toast==='function')toast(message);else alert(message)}
 const safeJson=x=>{try{return JSON.parse(x)}catch{return {holes:[],cutouts:[],origin:[0,0]}}};
-function library(){return `<style>.techLayout{display:grid;grid-template-columns:minmax(200px,290px) minmax(0,1fr);gap:16px}.techLayout .panel{max-width:none}.techLayout #techDetail .grid2{gap:12px}@media(max-width:900px){.techLayout{grid-template-columns:1fr}}.techLayout input[type=file]{font-size:12px}</style><div class="panel"><div class="flex wrap"><div><h2>Libreria tecnica accessori <span class="tag" id="taVersion" style="font-size:11px">R11 · diagnosi DWG originale</span></h2><p class="muted">Archivia i file originali e importa un pacchetto di lavorazioni e modello 3D. Ogni importazione deve essere verificata e approvata prima dell’utilizzo.</p></div><button class="btn primary" onclick="VSTech.create()">+ Nuovo accessorio</button></div><p class="small">I file appartengono alla singola vetreria. Una lavorazione importata rimane <b>Da verificare</b> finché non viene approvata. L'approvazione non sostituisce i controlli di produzione.</p><div class="techLayout"><div id="techList"></div><div id="techDetail"><p class="muted">Seleziona un accessorio.</p></div></div></div>`}
+function library(){return `<style>.techLayout{display:grid;grid-template-columns:minmax(200px,290px) minmax(0,1fr);gap:16px}.techLayout .panel{max-width:none}.techLayout #techDetail .grid2{gap:12px}@media(max-width:900px){.techLayout{grid-template-columns:1fr}}.techLayout input[type=file]{font-size:12px}</style><div class="panel"><div class="flex wrap"><div><h2>Libreria tecnica accessori <span class="tag" id="taVersion" style="font-size:11px">R12 · GS-MS verificato su DWG reale</span></h2><p class="muted">Archivia i file originali e importa un pacchetto di lavorazioni e modello 3D. Ogni importazione deve essere verificata e approvata prima dell’utilizzo.</p></div><button class="btn primary" onclick="VSTech.create()">+ Nuovo accessorio</button></div><p class="small">I file appartengono alla singola vetreria. Una lavorazione importata rimane <b>Da verificare</b> finché non viene approvata. L'approvazione non sostituisce i controlli di produzione.</p><div class="techLayout"><div id="techList"></div><div id="techDetail"><p class="muted">Seleziona un accessorio.</p></div></div></div>`}
 async function refresh(){try{S.items=(await request('/technical-accessories')).items;render()}catch(e){const list=$('techList');if(list)list.textContent=e.message;notify(e.message)}}
 function render(){const list=$('techList');if(!list)return;list.innerHTML=S.items.map(x=>`<button class="btn" style="width:100%;text-align:left;display:block;margin:7px 0;white-space:normal" onclick="VSTech.open('${x.id}')"><strong>${E(x.code)} — ${E(x.name)}</strong><span class="small" style="display:block">${E(x.category)} · ${x.status==='approved'?'Approvato':'Da verificare'}</span></button>`).join('')||'<p>Nessun accessorio ancora caricato.</p>'}
 async function create(){const code=prompt('Codice articolo (es. GS-304)');if(code===null)return;const name=prompt('Nome accessorio');if(name===null)return;try{const r=await request('/technical-accessories','POST',{code,name,category:'cerniera'});await refresh();await open(r.id)}catch(e){notify(e.message)}}
@@ -106,7 +106,7 @@ function loadBrowserEngine(){
 async function loadDWGEngine(){
  if(window.VSDWGImport)return window.VSDWGImport;
  await new Promise((resolve,reject)=>{
-  const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R10b-edge-notch-20261123';
+  const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R12-real-gsms-20261123';
   s.onload=()=>window.VSDWGImport?resolve():reject(Error('Modulo DWG caricato senza API'));
   s.onerror=()=>reject(Error('Modulo DWG non disponibile: verifica il deployment'));document.head.append(s);
  });
@@ -132,7 +132,7 @@ function renderCandidates(){
  if(notch?.status==='matched'){
   const cut=notch.cuts.cutouts[0],preview=candidateSvg({kind:'contorno',points:cut});
   const dim=notch.dimensions;
-  el.innerHTML='<div style="border:1px solid #c2dcdf;background:#f3faf9;border-radius:10px;padding:14px"><strong>Scasso riconosciuto automaticamente</strong><p class="small">Una tasca rettangolare con due raccordi circolari: è un unico taglio laterale, non tre fori separati. Il contorno del vetro non viene importato.</p><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">'+preview+'<div><b>Ø '+dim.diameter+' mm</b><br>Interasse: '+dim.centerSpacing+' mm<br>Profondità tasca: '+dim.notchDepth+' mm<br>Layer: '+E(notch.layer)+'</div></div><p class="small">BOZZA: controlla sul disegno del produttore queste tre quote e l’orientamento prima di approvare. Le curve DXF sono approssimate per l’anteprima e non per la CNC.</p></div>';
+  el.innerHTML='<div style="border:1px solid #c2dcdf;background:#f3faf9;border-radius:10px;padding:14px"><strong>Scasso riconosciuto automaticamente</strong><p class="small">Una tasca rettangolare con due raccordi circolari: è un unico taglio laterale, non tre fori separati. Il contorno del vetro non viene importato.</p><div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">'+preview+'<div><b>Ø '+dim.diameter+' mm</b><br>Interasse raccordi: '+dim.centerSpacing+' mm<br>Profondità fino al tratto interno: '+dim.notchDepth+' mm<br>Apertura: '+(dim.opening??'—')+' mm<br>Ingombro massimo: '+(dim.overallWidth??'—')+' × '+(dim.overallHeight??'—')+' mm<br>Layer: '+E(notch.layer)+'</div></div><p class="small">BOZZA: controlla sul disegno del produttore queste tre quote e l’orientamento prima di approvare. Le curve DXF sono approssimate per l’anteprima e non per la CNC.</p></div>';
  }else{
   el.innerHTML='<div style="border:1px solid #eed2be;background:#fffaf4;border-radius:10px;padding:13px"><strong>Taglio automatico non disponibile per questo disegno</strong><p class="small">'+E(notch?.reason||'Nessuna lavorazione univoca riconosciuta')+'</p><p class="small">Nessun taglio verrà generato o salvato. Il file può contenere archi non collegati, blocchi o rappresentazioni non eseguibili. Non scegliere manualmente linee o simboli che sembrano uguali al taglio.</p></div>';
  }
@@ -222,7 +222,7 @@ async function autoImport(){
 async function exportDxf(){
  try{
   if(!window.VSDWGImport?.toDxf)await new Promise((resolve,reject)=>{
-   const s=document.createElement('script');s.src='/dwg-browser-import.js?v=2';
+   const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R12-real-gsms-20261123';
    s.onload=()=>window.VSDWGImport?resolve():reject(Error('Modulo DWG non disponibile'));
    s.onerror=()=>reject(Error('Modulo DWG non raggiungibile'));document.head.append(s);
   });
@@ -269,5 +269,5 @@ async function updatePicker(){
  }catch(e){notify('Posizione automatica non disponibile: '+e.message)}
 }
 async function place(){try{const id=$('pickTech').value;const row=S.items.find(t=>t.id===id);const d=await request('/technical-accessories/'+id);const cuts=safeJson(d.item.cut_spec);const res=window.VSTechBridge.place({...row,cut_spec:cuts,model_meta:safeJson(d.item.model_meta)},Number($('pickX').value),Number($('pickY').value));if(!res.ok)throw Error(res.error);closeModal();notify('Accessorio inserito e lavorazioni applicate al vetro')}catch(e){notify(e.message)}}
-window.VSTech={version:'R11-dwg-diagnostic-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,place,parseDXF};
+window.VSTech={version:'R12-real-gsms-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,place,parseDXF};
 })();
