@@ -1,0 +1,36 @@
+name: Installa motore DWG locale
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vendor-dwg-wasm.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Scarica versione fissata e verifica gli artefatti WASM
+        run: |
+          npm install --ignore-scripts --no-save --package-lock=false @mlightcad/libredwg-web@0.7.14
+          test -s node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm
+          mkdir -p public/vendor/libredwg
+          cp node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm public/vendor/libredwg/libredwg-web.wasm
+          file public/vendor/libredwg/libredwg-web.wasm
+          ls -lh public/vendor/libredwg/libredwg-web.wasm
+      - name: Pubblica il motore nel repository
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add public/vendor/libredwg/libredwg-web.wasm
+          if ! git diff --cached --quiet; then
+            git commit -m "build: vendor LibreDWG wasm to same-origin static asset"
+            git push origin HEAD:main
+          fi
