@@ -21,22 +21,25 @@ jobs:
         run: |
           npm install --ignore-scripts --no-save --package-lock=false @mlightcad/libredwg-web@0.7.14 occt-import-js@0.0.23
           test -s node_modules/@mlightcad/libredwg-web/dist/libredwg-web.js
+          test -s node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.js
           test -s node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm
-          mkdir -p public/vendor/libredwg
-          cp node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm public/vendor/libredwg/libredwg-web.wasm
-          cp node_modules/@mlightcad/libredwg-web/dist/libredwg-web.js public/vendor/libredwg/libredwg-web.js
+          mkdir -p public/vendor/libredwg/dist public/vendor/libredwg/wasm
+          cp node_modules/@mlightcad/libredwg-web/dist/libredwg-web.js public/vendor/libredwg/dist/libredwg-web.js
+          cp node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.js public/vendor/libredwg/wasm/libredwg-web.js
+          cp node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm public/vendor/libredwg/wasm/libredwg-web.wasm
+          rm -f public/vendor/libredwg/libredwg-web.js public/vendor/libredwg/libredwg-web.wasm
           test -s node_modules/occt-import-js/dist/occt-import-js.js
           test -s node_modules/occt-import-js/dist/occt-import-js.wasm
           mkdir -p public/vendor/occt
           cp node_modules/occt-import-js/dist/occt-import-js.js public/vendor/occt/occt-import-js.js
           cp node_modules/occt-import-js/dist/occt-import-js.wasm public/vendor/occt/occt-import-js.wasm
-          file public/vendor/libredwg/libredwg-web.wasm
-          ls -lh public/vendor/libredwg/libredwg-web.wasm
+          file public/vendor/libredwg/wasm/libredwg-web.wasm
+          ls -lh public/vendor/libredwg/wasm/libredwg-web.wasm
       - name: Pubblica il motore nel repository
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add public/vendor/libredwg/libredwg-web.wasm public/vendor/libredwg/libredwg-web.js public/vendor/occt/occt-import-js.js public/vendor/occt/occt-import-js.wasm
+          git add -A public/vendor/libredwg public/vendor/occt
           if ! git diff --cached --quiet; then
             git commit -m "build: vendor LibreDWG wasm to same-origin static asset"
             git push origin HEAD:main
