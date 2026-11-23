@@ -4,7 +4,7 @@
  */
 (function (root) {
   'use strict';
-  const CDN = 'https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/';
+  const CDN = '/vendor/occt/';
   let kernelPromise;
   function finiteArray(v) { return Array.isArray(v) && v.every(Number.isFinite); }
   function flattenTri(v) {
