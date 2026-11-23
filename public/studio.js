@@ -361,14 +361,14 @@ designer=designerHTML;init3d=initStudio;rebuild3d=drawScene;camPreset=cameraPres
 exportDXF=function(){const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES'];
  const line=(a,b,layer)=>rows.push('0','LINE','8',layer,'10',String(a[0]),'20',String(a[1]),'30','0','11',String(b[0]),'21',String(b[1]),'31','0');
  for(const [i,o] of model().objects.filter(x=>['glass','mirror'].includes(x.kind)).entries()){
-  const layer='LASTRA_'+(i+1),pts=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];
+  const derived=technicalGlassShape(o);const layer='LASTRA_'+(i+1),pts=derived.outline;
   if(!window.VSGeometry.validate(pts,technicalHoles(o)).ok){toast('Esportazione DXF bloccata: geometria non valida '+o.name);return}
-  if(o.cadProfile?.points?.length>=3&&o.cadProfile.bulges?.some(b=>Math.abs(b||0)>1e-9)){
+  if(!technicalCutouts(o).length&&o.cadProfile?.points?.length>=3&&o.cadProfile.bulges?.some(b=>Math.abs(b||0)>1e-9)){
    const profile=o.cadProfile;
    rows.push('0','LWPOLYLINE','8',layer,'90',String(profile.points.length),'70','1');
    for(let j=0;j<profile.points.length;j++)rows.push('10',String(profile.points[j][0]),'20',String(profile.points[j][1]),'42',String(profile.bulges[j]||0));
   }else for(let j=0;j<pts.length;j++)line(pts[j],pts[(j+1)%pts.length],layer);
-  for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of technicalCutouts(o))for(let i=0;i<polygon.length;i++)line(polygon[i],polygon[(i+1)%polygon.length],layer+'_TAGLI')
+  for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of derived.voids)for(let i=0;i<polygon.length;i++)line(polygon[i],polygon[(i+1)%polygon.length],layer+'_TAGLI')
  }
  rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+'.dxf',rows.join('\n'),'application/dxf')};
 exportCSV=function(){const p=pricingModel(),rows=[['Voce','Valore'],['Superficie vetro m²',p.area.toFixed(2)],['Materiali €',p.material.toFixed(2)],['Accessori €',p.accessories.toFixed(2)],['Imponibile €',p.net.toFixed(2)],['IVA €',p.tax.toFixed(2)],['Totale €',p.total.toFixed(2)]];download('distinta-'+safeFile(S.current.title)+'.csv','\uFEFF'+rows.map(r=>r.map(v=>String(v)).join(';')).join('\r\n'),'text/csv')};
