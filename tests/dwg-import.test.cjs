@@ -246,6 +246,10 @@ test('GS-MS reale: profilo aperto LINE/ARC riconosciuto con dimensioni CAD misur
  assert.equal(parsed.cuts.holes.length,0);
  assert.equal(parsed.cuts.cutouts.length,1);
  assert.equal(parsed.cuts.edgeNotch,true);
+ assert.equal(parsed.cuts.exactPaths?.[0]?.points?.length,6);
+ assert.equal(parsed.cuts.exactPaths?.[0]?.bulges?.filter(b=>Math.abs(b)>0.1).length,2);
+ const dxf=cadModule.exports.toDxf(parsed.cuts);
+ assert.equal((dxf.match(/\n42\n/g)||[]).length,2);
  const outline=parsed.cuts.cutouts[0];
  assert.ok(outline.length>30);
  const xs=outline.map(p=>p[0]),offset=-Math.min(...xs);
