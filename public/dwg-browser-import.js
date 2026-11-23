@@ -155,22 +155,25 @@ function normalize(database,layers=[],unitConfirmed=false) {
  const round=n=>Math.round(n*10000)/10000;
  return {cuts:{holes:holes.map(h=>({x:round(h.x-cx),y:round(h.y-cy),r:round(h.r)})),cutouts:polys.map(poly=>poly.map(p=>[round(p[0]-cx),round(p[1]-cy)])),origin:[round(cx),round(cy)]},layers:names,report,ignored,curved,approximationMm:curved?CHORD_ERROR:0,warning:'DWG in bozza: origine centrata automaticamente. '+(curved?'Le curve sono campionate con errore teorico massimo 0,025 mm per ANTEPRIMA, non per CNC. ':'')+'Verificare interassi, geometrie e scheda del produttore.',format:'DWG'};
 }
-async function parseDwg(file,layers=[],unitConfirmed=false) {
- if(!file||!/\.dwg$/i.test(file.name)||file.size<128||file.size>12*1024*1024)throw Error('Seleziona un DWG valido, massimo 12 MB');
+async function readDwg(file) {
+ if(!file||!/\.dwg$/i.test(file.name)||file.size<128||file.size>12*1024*1024)throw Error('Seleziona un DWG valido (max 12 MB)');
  const buf=new Uint8Array(await file.arrayBuffer());
  if(!/^AC10\d\d/.test(new TextDecoder().decode(buf.subarray(0,6))))throw Error('Firma DWG non riconosciuta');
  if(!engine)engine=import(MODULE).then(async lib=>({
-  parser:await lib.LibreDwg.create(BASE),
-  kind:lib.Dwg_File_Type.DWG
- })).catch(err=>{
-   engine=null;
-   throw Error('Motore DWG locale non disponibile: controlla che /vendor/libredwg/dist/libredwg-web.js e /vendor/libredwg/wasm/libredwg-web.wasm siano presenti nel deployment. Dettaglio: '+err.message);
- });
+   parser:await lib.LibreDwg.create(BASE),kind:lib.Dwg_File_Type.DWG
+ })).catch(err=>{engine=null;throw Error('Motore LibreDWG non disponibile: '+err.message)});
  const {parser,kind}=await engine;
- const ptr=parser.dwg_read_data(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength),kind);
- if(!ptr)throw Error('DWG non leggibile dalla libreria LibreDWG');
- let db;
- try{db=parser.convert(ptr)}finally{try{parser.dwg_free(ptr)}catch(_){}}
+ const ptr=parser.dwg_read_data(buf,kind);
+ if(!ptr)throw Error('DWG non leggibile dal motore LibreDWG');
+ try{return parser.convert(ptr)}
+ finally{try{parser.dwg_free(ptr)}catch(_){}}
+}
+async function inspectDwg(file) {
+ const db=await readDwg(file);
+ return summarize(db);
+}
+async function parseDwg(file,layers=[],unitConfirmed=false) {
+ const db=await readDwg(file);
  return normalize(db,layers,unitConfirmed);
 }
 function toDxf(cuts) {
@@ -191,6 +194,6 @@ function toDxf(cuts) {
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
 }
-root.VSDWGImport={parseDwg,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+root.VSDWGImport={parseDwg,inspectDwg,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
 if(typeof module!=='undefined'&&module.exports)module.exports={normalize,summarize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
