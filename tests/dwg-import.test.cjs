@@ -101,3 +101,32 @@ test('Mostra statistiche delle entità anche quando non ci sono fori',()=>{
  assert.equal(summary.layers.GLASS.types.LINE,1);
  assert.equal(summary.layers.QUOTES.types.DIMENSION,1);
 });
+
+test('DXF convertito da LibreDWG: legge layer e LINE senza dipendere da convert(ptr)',()=>{
+ const sample=['0','SECTION','2','HEADER','9','$INSUNITS','70','4','0','ENDSEC',
+ '0','SECTION','2','ENTITIES',
+ '0','LINE','8','GLASS_CUT','10','0','20','0','11','20','21','0',
+ '0','LINE','8','GLASS_CUT','10','20','20','0','11','20','21','15',
+ '0','LINE','8','GLASS_CUT','10','20','20','15','11','0','21','15',
+ '0','LINE','8','GLASS_CUT','10','0','20','15','11','0','21','0',
+ '0','TEXT','8','NOTES','1','QUOTA',
+ '0','ENDSEC','0','EOF'].join('\n')+'\n';
+ const db=cadModule.exports.parseConvertedDxf(sample);
+ assert.equal(db.entities.length,5);
+ assert.equal(db.header.insunits,4);
+ assert.equal(cadModule.exports.summarize(db).layers.GLASS_CUT.types.LINE,4);
+ const result=normalize(db,['GLASS_CUT']);
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.cuts.cutouts[0].length,4);
+});
+test('DXF convertito: traduce gli angoli ARC da gradi a radianti',()=>{
+ const sample=['0','SECTION','2','ENTITIES','0','ARC','8','CUT','10','0','20','0','40','8','50','90','51','180','0','ENDSEC','0','EOF'].join('\n');
+ const db=cadModule.exports.parseConvertedDxf(sample);
+ assert.ok(Math.abs(db.entities[0].startAngle-Math.PI/2)<1e-8);
+ assert.ok(Math.abs(db.entities[0].endAngle-Math.PI)<1e-8);
+});
+test('DXF convertito senza Model Space segnala assenza entità',()=>{
+ const sample=['0','SECTION','2','HEADER','0','ENDSEC','0','SECTION','2','ENTITIES','0','ENDSEC','0','EOF'].join('\n');
+ const db=cadModule.exports.parseConvertedDxf(sample);
+ assert.equal(db.entities.length,0);
+});
