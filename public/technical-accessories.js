@@ -106,7 +106,7 @@ function loadBrowserEngine(){
 async function loadDWGEngine(){
  if(window.VSDWGImport)return window.VSDWGImport;
  await new Promise((resolve,reject)=>{
-  const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R10-auto-notch-20261123';
+  const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R10b-edge-notch-20261123';
   s.onload=()=>window.VSDWGImport?resolve():reject(Error('Modulo DWG caricato senza API'));
   s.onerror=()=>reject(Error('Modulo DWG non disponibile: verifica il deployment'));document.head.append(s);
  });
