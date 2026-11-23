@@ -196,3 +196,26 @@ test('Riconosce la tasca anche se le due linee orizzontali sono segmenti di una 
  assert.equal(r.dimensions.notchDepth,39);
  assert.equal(r.cuts.cutouts.length,1);
 });
+
+test('Una cerniera riconosciuta e agganciata al bordo produce uno scasso, non due fori',()=>{
+ const clipModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/vendor/polygon-clipping/polygon-clipping.umd.min.js'),'utf8'),{module:clipModule,exports:clipModule.exports});
+ const P=(x,y)=>({x,y,z:0});
+ const ents=[
+  {type:'LINE',layer:'CUT',startPoint:P(0,0),endPoint:P(39,0)},
+  {type:'LINE',layer:'CUT',startPoint:P(0,59),endPoint:P(39,59)},
+  {type:'ARC',layer:'CUT',center:P(39,0),radius:8,startAngle:0,endAngle:Math.PI},
+  {type:'ARC',layer:'CUT',center:P(39,59),radius:8,startAngle:Math.PI,endAngle:Math.PI*2}
+ ];
+ const result=cadModule.exports.autoHingeNotch(base(ents),clipModule.exports);
+ assert.equal(result.status,'matched',result.reason);
+ assert.equal(result.cuts.edgeNotch,true);
+ const poly=result.cuts.cutouts[0],x=-Math.min(...poly.map(p=>p[0])),y=70;
+ const translated=poly.map(p=>[p[0]+x,p[1]+y]);
+ const shapeMod={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/technical-glass-boolean.js'),'utf8'),{module:shapeMod,globalThis:{}});
+ const cut=shapeMod.exports.difference([[0,0],[400,0],[400,400],[0,400]],[translated],clipModule.exports);
+ assert.equal(cut.edgeNotch,true);
+ assert.equal(cut.voids.length,0);
+ assert.ok(cut.removedArea>0);
+});
