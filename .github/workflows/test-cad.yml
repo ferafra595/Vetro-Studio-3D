@@ -7,6 +7,7 @@ on:
       - 'public/technical-accessories.js'
       - 'public/cad-browser-import.js'
       - 'tests/**'
+      - 'public/vendor/**'
       - '.github/workflows/test-cad.yml'
   workflow_dispatch:
 jobs:
@@ -24,3 +25,13 @@ jobs:
           node --check public/technical-accessories.js
       - name: Test di sicurezza geometrica DWG
         run: node --test tests/dwg-import.test.cjs
+      - name: Verifica la presenza delle librerie CAD locali
+        run: |
+          test -s public/vendor/libredwg/libredwg-web.wasm
+          test -s public/vendor/libredwg/libredwg-web.js
+          test -s public/vendor/occt/occt-import-js.wasm
+          test -s public/vendor/occt/occt-import-js.js
+      - name: Installa browser smoke runner
+        run: npm install --no-save --package-lock=false playwright-core@1.56.1
+      - name: Esegui i motori WASM nel browser
+        run: node tests/cad-browser-smoke.cjs
