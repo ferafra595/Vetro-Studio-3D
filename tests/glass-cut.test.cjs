@@ -1,7 +1,10 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const clipping=require('polygon-clipping');
-const {difference}=require('../public/technical-glass-boolean.js');
+const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+const cadModule={exports:{}};
+vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../public/technical-glass-boolean.js'),'utf8'),{module:cadModule,globalThis:{}});
+const {difference}=cadModule.exports;
 const glass=[[0,0],[200,0],[200,100],[0,100]];
 const rect=(x0,y0,x1,y1)=>[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
 test('Scasso sul bordo sinistro rimuove materiale senza foro fittizio',()=>{
