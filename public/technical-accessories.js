@@ -93,7 +93,7 @@ let browserEnginePromise;
 function loadBrowserEngine(){
  if(window.VSCADBrowser)return Promise.resolve(window.VSCADBrowser);
  if(!browserEnginePromise)browserEnginePromise=new Promise((resolve,reject)=>{
-  const script=document.createElement('script');script.src='/cad-browser-import.js';script.async=true;
+  const script=document.createElement('script');script.src='/cad-browser-import.js?v=R5-local-20261123';script.async=true;
   script.onload=()=>window.VSCADBrowser?resolve(window.VSCADBrowser):reject(Error('Modulo CAD browser non caricato'));
   script.onerror=()=>reject(Error('Manca public/cad-browser-import.js nel deployment'));
   document.head.append(script);
@@ -115,7 +115,7 @@ async function autoImport(){
   if(dwg&&dxf)throw Error('Seleziona DWG oppure DXF per i tagli, non entrambi.');
   if(dwg) {
    if(!window.VSDWGImport) await new Promise((resolve,reject)=>{
-    const s=document.createElement('script');s.src='/dwg-browser-import.js?v=2';
+    const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R5-local-20261123';
     s.onload=()=>window.VSDWGImport?resolve():reject(Error('Parser DWG non caricato'));
     s.onerror=()=>reject(Error('Modulo DWG non disponibile'));document.head.append(s);
    });
