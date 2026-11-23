@@ -44,12 +44,3 @@ jobs:
         run: node --test tests/glass-cut.test.cjs
       - name: Esegui i motori WASM nel browser
         run: node tests/cad-browser-smoke.cjs
-      - name: Archivio motore CAD per test DWG locale
-        uses: actions/upload-artifact@v4
-        with:
-          name: vetrostudio-cad-runtime
-          path: |
-            public/vendor/libredwg/
-            public/vendor/polygon-clipping/
-            public/dwg-browser-import.js
-          retention-days: 1
