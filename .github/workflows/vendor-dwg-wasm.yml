@@ -19,7 +19,7 @@ jobs:
           node-version: '22'
       - name: Scarica versione fissata e verifica gli artefatti WASM
         run: |
-          npm install --ignore-scripts --no-save --package-lock=false @mlightcad/libredwg-web@0.7.14 occt-import-js@0.0.23
+          npm install --ignore-scripts --no-save --package-lock=false @mlightcad/libredwg-web@0.7.14 occt-import-js@0.0.23 polygon-clipping@0.15.7
           test -s node_modules/@mlightcad/libredwg-web/dist/libredwg-web.js
           test -s node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.js
           test -s node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm
@@ -33,13 +33,16 @@ jobs:
           mkdir -p public/vendor/occt
           cp node_modules/occt-import-js/dist/occt-import-js.js public/vendor/occt/occt-import-js.js
           cp node_modules/occt-import-js/dist/occt-import-js.wasm public/vendor/occt/occt-import-js.wasm
+          test -s node_modules/polygon-clipping/dist/polygon-clipping.umd.min.js
+          mkdir -p public/vendor/polygon-clipping
+          cp node_modules/polygon-clipping/dist/polygon-clipping.umd.min.js public/vendor/polygon-clipping/polygon-clipping.umd.min.js
           file public/vendor/libredwg/wasm/libredwg-web.wasm
           ls -lh public/vendor/libredwg/wasm/libredwg-web.wasm
       - name: Pubblica il motore nel repository
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add -A public/vendor/libredwg public/vendor/occt
+          git add -A public/vendor/libredwg public/vendor/occt public/vendor/polygon-clipping
           if ! git diff --cached --quiet; then
             git commit -m "build: vendor LibreDWG wasm to same-origin static asset"
             git pull --rebase origin main
