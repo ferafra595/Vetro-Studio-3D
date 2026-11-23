@@ -5,18 +5,18 @@
 (function(root) {
 'use strict';
 const PACKAGE_VERSION='0.7.14';
-const BASE='https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@'+PACKAGE_VERSION+'/wasm/';
-const MODULE='https://cdn.jsdelivr.net/npm/@mlightcad/libredwg-web@'+PACKAGE_VERSION+'/+esm';
+const BASE=new URL('/vendor/libredwg/',typeof location!=='undefined'?location.href:'https://localhost/').href;
+const MODULE='/vendor/libredwg/libredwg-web.js';
 let engine;
 const safe=n=>Number.isFinite(Number(n));
 function normalize(database,layers=[],unitConfirmed=false) {
  if(!database||!Array.isArray(database.entities))throw Error('DWG: geometrie del Model Space non disponibili');
  const header=database.header||{};
  const rawUnit=header.insunits??header.INSUNITS??header['$INSUNITS']??header?.variables?.INSUNITS;
- const units=rawUnit===undefined||rawUnit===null?'unknown':Number(rawUnit);
- if(units!=='unknown'&&units!==4)throw Error('DWG: il file dichiara unità diverse dai millimetri (INSUNITS '+units+').');
- if(units==='unknown'&&!unitConfirmed)throw Error('DWG: unità non rilevate. Conferma esplicitamente che il disegno è in millimetri.');
- const entities=database.entities.filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==false);
+ const units=rawUnit===undefined||rawUnit===null||rawUnit===''?'unknown':Number(rawUnit);
+ if(units!=='unknown'&&units!==0&&units!==4)throw Error('DWG: unità del disegno diverse da millimetri (INSUNITS '+units+').');
+ if((units==='unknown'||units===0)&&!unitConfirmed)throw Error('DWG: unità assenti o non definite. Conferma i millimetri con la scheda originale del produttore.');
+ const entities=database.entities.filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
  const names=[...new Set(entities.map(e=>String(e.layer||'0')))];
  const selected=new Set(layers.map(x=>String(x).trim().toUpperCase()).filter(Boolean));
  if(!selected.size&&names.length>1)throw Error('DWG: presenti più layer ('+names.slice(0,16).join(', ')+'). Inserisci i layer contenenti SOLO i tagli.');
@@ -59,14 +59,35 @@ async function parseDwg(file,layers=[],unitConfirmed=false) {
  if(!engine)engine=import(MODULE).then(async lib=>({
   parser:await lib.LibreDwg.create(BASE),
   kind:lib.Dwg_File_Type.DWG
- })).catch(err=>{engine=null;throw Error('Lettore LibreDWG WebAssembly non disponibile: '+err.message)});
+ })).catch(err=>{
+   engine=null;
+   throw Error('Motore DWG locale non disponibile: controlla che /vendor/libredwg/libredwg-web.js e /vendor/libredwg/libredwg-web.wasm siano presenti nel deployment. Dettaglio: '+err.message);
+ });
  const {parser,kind}=await engine;
- const ptr=parser.dwg_read_data(buf,kind);
+ const ptr=parser.dwg_read_data(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength),kind);
  if(!ptr)throw Error('DWG non leggibile dalla libreria LibreDWG');
  let db;
  try{db=parser.convert(ptr)}finally{try{parser.dwg_free(ptr)}catch(_){}}
  return normalize(db,layers,unitConfirmed);
 }
-root.VSDWGImport={parseDwg,normalize,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
-if(typeof module!=='undefined'&&module.exports)module.exports={normalize};
+function toDxf(cuts) {
+ if(!cuts||!Array.isArray(cuts.holes)||!Array.isArray(cuts.cutouts))throw Error('Geometrie di taglio mancanti');
+ if(!cuts.holes.length&&!cuts.cutouts.length)throw Error('Non ci sono lavorazioni da esportare');
+ const out=['0','SECTION','2','HEADER','9','$ACADVER','1','AC1015','9','$INSUNITS','70','4','0','ENDSEC',
+  '0','SECTION','2','ENTITIES','999','VETROSTUDIO - pattern relativo al punto di fissaggio (0,0), non certificato per produzione'];
+ const n=v=>{if(!Number.isFinite(Number(v)))throw Error('Coordinata DXF non valida');return Number(v).toFixed(4)};
+ for(const hole of cuts.holes) {
+  if(!(hole.r>0&&hole.r<=300))throw Error('Raggio foro non valido');
+  out.push('0','CIRCLE','8','GLASS_CUT','10',n(hole.x),'20',n(hole.y),'30','0','40',n(hole.r));
+ }
+ for(const points of cuts.cutouts) {
+  if(!Array.isArray(points)||points.length<3||points.length>300)throw Error('Contorno DXF non valido');
+  out.push('0','LWPOLYLINE','8','GLASS_CUT','90',String(points.length),'70','1');
+  for(const [x,y] of points)out.push('10',n(x),'20',n(y));
+ }
+ out.push('0','ENDSEC','0','EOF');
+ return out.join('\n')+'\n';
+}
+root.VSDWGImport={parseDwg,normalize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+if(typeof module!=='undefined'&&module.exports)module.exports={normalize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
