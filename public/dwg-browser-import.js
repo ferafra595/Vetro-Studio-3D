@@ -5,8 +5,8 @@
 (function(root) {
 'use strict';
 const PACKAGE_VERSION='0.7.14';
-const BASE=new URL('/vendor/libredwg/',typeof location!=='undefined'?location.href:'https://localhost/').href;
-const MODULE='/vendor/libredwg/libredwg-web.js';
+const BASE=new URL('/vendor/libredwg/wasm',typeof location!=='undefined'?location.href:'https://localhost/').href;
+const MODULE='/vendor/libredwg/dist/libredwg-web.js';
 let engine;
 const safe=n=>Number.isFinite(Number(n));
 function normalize(database,layers=[],unitConfirmed=false) {
@@ -61,7 +61,7 @@ async function parseDwg(file,layers=[],unitConfirmed=false) {
   kind:lib.Dwg_File_Type.DWG
  })).catch(err=>{
    engine=null;
-   throw Error('Motore DWG locale non disponibile: controlla che /vendor/libredwg/libredwg-web.js e /vendor/libredwg/libredwg-web.wasm siano presenti nel deployment. Dettaglio: '+err.message);
+   throw Error('Motore DWG locale non disponibile: controlla che /vendor/libredwg/dist/libredwg-web.js e /vendor/libredwg/wasm/libredwg-web.wasm siano presenti nel deployment. Dettaglio: '+err.message);
  });
  const {parser,kind}=await engine;
  const ptr=parser.dwg_read_data(buf.buffer.slice(buf.byteOffset,buf.byteOffset+buf.byteLength),kind);
