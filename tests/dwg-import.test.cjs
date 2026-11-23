@@ -1,0 +1,37 @@
+// Test della normalizzazione geometrica DWG senza richiedere la libreria WASM.
+const assert=require('node:assert/strict');
+const test=require('node:test');
+const {normalize}=require('../public/dwg-browser-import.js');
+const base=(entities,unit=4)=>({header:{insunits:unit},entities});
+const circle=(x,y,r,layer='CUT')=>({type:'CIRCLE',layer,center:{x,y,z:0},radius:r,extrusionDirection:{z:1}});
+const poly=(layer='CUT')=>({type:'LWPOLYLINE',layer,flag:1,elevation:0,vertices:[{x:0,y:0,bulge:0},{x:10,y:0,bulge:0},{x:10,y:5,bulge:0},{x:0,y:5,bulge:0}]});
+test('Foro DWG in millimetri',()=>{
+ const result=normalize(base([circle(100,100,7)]),[]);
+ assert.equal(result.cuts.holes.length,1);
+ assert.equal(result.cuts.holes[0].r,7);
+ assert.equal(result.cuts.holes[0].x,0);
+ assert.equal(result.cuts.origin[0],100);
+});
+test('Polilinea chiusa con quattro vertici',()=>{
+ const result=normalize(base([poly()]),[]);
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.cuts.cutouts[0].length,4);
+});
+test('Blocca DWG in pollici',()=>{
+ assert.throws(()=>normalize(base([circle(0,0,7)],1)),/millimetri/);
+});
+test('Richiede conferma esplicita se unità ignote',()=>{
+ assert.throws(()=>normalize(base([circle(0,0,7)],undefined)),/unità/);
+ assert.equal(normalize(base([circle(0,0,7)],undefined),[],true).cuts.holes.length,1);
+});
+test('Blocca layer misti se non selezionati',()=>{
+ assert.throws(()=>normalize(base([circle(0,0,7),{type:'TEXT',layer:'NOTES'}])),/layer/);
+ assert.equal(normalize(base([circle(0,0,7),{type:'TEXT',layer:'NOTES'}]),['CUT']).cuts.holes.length,1);
+});
+test('Blocca contorni curvi non riconosciuti',()=>{
+ const p=poly();p.vertices[0].bulge=0.5;
+ assert.throws(()=>normalize(base([p])),/LWPOLYLINE/);
+});
+test('Blocca INSERT sul layer di taglio',()=>{
+ assert.throws(()=>normalize(base([{type:'INSERT',layer:'CUT'}])),/INSERT/);
+});
