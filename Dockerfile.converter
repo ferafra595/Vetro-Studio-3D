@@ -1,0 +1,18 @@
+FROM python:3.11-slim-bookworm AS libredwg
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential autoconf automake libtool pkg-config libpcre2-dev gettext autopoint && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch 0.13.4 https://github.com/LibreDWG/libredwg.git /src/libredwg \
+ && cd /src/libredwg && autoreconf -fi && ./configure --prefix=/usr/local --disable-shared && make -j2 && make install
+
+FROM python:3.11-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY --from=libredwg /usr/local/bin/dwgread /usr/local/bin/dwgread
+# Static libreDWG build may need supporting compiled executable libraries; check dwgread --version during image build.
+RUN dwgread --version
+WORKDIR /app
+COPY requirements-converter.txt .
+RUN pip install --no-cache-dir -r requirements-converter.txt
+COPY cad_converter_service.py .
+RUN useradd -m -u 10001 cad
+USER cad
+EXPOSE 8080
+CMD ["uvicorn","cad_converter_service:app","--host","0.0.0.0","--port","8080","--workers","1"]

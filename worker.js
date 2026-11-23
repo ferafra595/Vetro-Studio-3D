@@ -50,6 +50,36 @@ if(u.role==='tenant'&&u.tenant_status==='paused'&&!['GET','HEAD'].includes(metho
 // Libreria tecnica privata: dati su D1, file CAD su R2; nessuna condivisione tra vetrerie.
 if(p.startsWith('/api/technical-accessories')){
  if(u.role!=='tenant')return fail(403,'Accesso riservato alla vetreria');
+ // Direct CAD conversion through an independently hosted, authenticated conversion service.
+ // Draft data only; existing approval flow remains mandatory.
+ if(p==='/api/technical-accessories/convert'&&method==='POST'){
+  if(!env.CAD_CONVERTER_URL||!env.CAD_CONVERTER_TOKEN)return fail(503,'Servizio CAD non configurato: imposta CAD_CONVERTER_URL e CAD_CONVERTER_TOKEN');
+  const url=String(env.CAD_CONVERTER_URL).replace(/\/$/,'')+'/convert';
+  if(!url.startsWith('https://'))return fail(503,'Servizio CAD: URL HTTPS obbligatorio');
+  let form;try{form=await req.formData()}catch{return fail(400,'Caricamento multipart non valido')}
+  let forward=new FormData();let fileCount=0;
+  for(const ext of ['dwg','step']){
+   const file=form.get(ext);
+   if(file&&typeof file.arrayBuffer==='function'){
+    if(!file.size||file.size>12*1024*1024)return fail(413,'File CAD vuoto o maggiore di 12 MB');
+    const head=new Uint8Array(await file.slice(0,2048).arrayBuffer());
+    const sig=new TextDecoder().decode(head);
+    if(ext==='dwg'&&!sig.startsWith('AC10'))return fail(422,'DWG non riconosciuto');
+    if(ext==='step'&&!sig.includes('ISO-10303-21'))return fail(422,'STEP non riconosciuto');
+    forward.append(ext,file,ext+'.'+(ext==='dwg'?'dwg':'step'));fileCount++;
+   }
+  }
+  if(!fileCount)return fail(400,'Carica un DWG o STEP');
+  const layers=String(form.get('cutting_layers')||'').slice(0,400);forward.append('cutting_layers',layers);
+  try{
+   const converted=await fetch(url,{method:'POST',headers:{'X-CAD-Token':env.CAD_CONVERTER_TOKEN},body:forward,signal:AbortSignal.timeout(95000)});
+   const data=await converted.json().catch(()=>({detail:'Servizio CAD: risposta non leggibile'}));
+   if(!converted.ok)return json({error:String(data.detail||data.error||'Conversione fallita')},converted.status>=500?502:422);
+   if(data.format!=='vetrostudio-technical-import'||data.status!=='draft'||data.version!==1)return fail(502,'Risposta CAD non conforme');
+   return json(data);
+  }catch(e){return fail(502,'Servizio CAD non raggiungibile: '+String(e.message||e).slice(0,150))}
+ }
+
  const match=p.match(/^\/api\/technical-accessories(?:\/([\w-]+))?(?:\/files\/(dwg|step|dxf|glb))?$/);
  if(!match)return fail(404,'Percorso non valido');
  const id=match[1],fileType=match[2],tenant=u.tenant_id;
