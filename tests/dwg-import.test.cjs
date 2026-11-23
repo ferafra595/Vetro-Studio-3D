@@ -219,3 +219,42 @@ test('Una cerniera riconosciuta e agganciata al bordo produce uno scasso, non du
  assert.equal(cut.voids.length,0);
  assert.ok(cut.removedArea>0);
 });
+
+test('GS-MS reale: profilo aperto LINE/ARC riconosciuto con dimensioni CAD misurate',()=>{
+ const P=(x,y)=>({x,y,z:0});
+ const line=(id,a,b)=>({type:'LINE',layer:'0',handle:id,startPoint:P(...a),endPoint:P(...b)});
+ const arc=(id,cy,startDeg,endDeg)=>({type:'ARC',layer:'0',handle:id,
+  center:P(239.7689538922483,cy),radius:4,
+  startAngle:startDeg*Math.PI/180,endAngle:endDeg*Math.PI/180});
+ const entities=[
+  line('293',[221.7689538922483,82.16284927055415],[221.7689538922483,68.97662017058528]),
+  line('294',[235.9692828538556,82.16284927055415],[221.7689538922483,82.16284927055415]),
+  arc('295',83.41284927055415,198.21,67.9757),
+  line('296',[241.2689538922483,109.2047500270063],[241.2689538922483,87.12094851410197]),
+  arc('297',112.9128492705541,292.0243,161.79),
+  line('298',[221.7689538922483,114.1628492705541],[235.9692828538556,114.1628492705541]),
+  line('299',[221.7689538922483,127.349078370523],[221.7689538922483,114.1628492705541]),
+  {type:'LINE',layer:'FORMAT',startPoint:P(0,0),endPoint:P(200,0)},
+  {type:'CIRCLE',layer:'0',center:P(106,80),radius:2.5}
+ ];
+ const parsed=cadModule.exports.autoOpenEdgeNotch(base(entities));
+ assert.equal(parsed.status,'matched',parsed.reason);
+ assert.equal(parsed.dimensions.diameter,8);
+ assert.equal(parsed.dimensions.centerSpacing,29.5);
+ assert.equal(parsed.dimensions.notchDepth,19.5);
+ assert.equal(parsed.dimensions.opening,32);
+ assert.equal(parsed.cuts.holes.length,0);
+ assert.equal(parsed.cuts.cutouts.length,1);
+ assert.equal(parsed.cuts.edgeNotch,true);
+ const outline=parsed.cuts.cutouts[0];
+ assert.ok(outline.length>30);
+ const xs=outline.map(p=>p[0]),offset=-Math.min(...xs);
+ const ring=outline.map(p=>[p[0]+offset,p[1]+140]);
+ const clipModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/vendor/polygon-clipping/polygon-clipping.umd.min.js'),'utf8'),{module:clipModule,exports:clipModule.exports});
+ const glassModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/technical-glass-boolean.js'),'utf8'),{module:glassModule,globalThis:{}});
+ const shape=glassModule.exports.difference([[0,0],[500,0],[500,400],[0,400]],[ring],clipModule.exports);
+ assert.equal(shape.edgeNotch,true);
+ assert.equal(shape.voids.length,0);
+});
