@@ -283,6 +283,24 @@ function autoHingeNotch(database,clipper){
   }else if(kind==='LINE'){
    const a=pt(e.startPoint||e.start),b=pt(e.endPoint||e.end);
    if(a.every(Number.isFinite)&&b.every(Number.isFinite)&&Math.abs(a[1]-b[1])<0.08&&Math.abs(a[0]-b[0])>8)lines.push({xmin:Math.min(a[0],b[0]),xmax:Math.max(a[0],b[0]),y:(a[1]+b[1])/2,layer,index:i});
+  }else if(kind==='LWPOLYLINE'||kind==='POLYLINE_2D'){
+   const verts=e.vertices||[],closed=(Number(e.flag||0)&1)!==0||e.closed===true;
+   for(let k=0;k<(closed?verts.length:verts.length-1);k++){
+    const from=verts[k],to=verts[(k+1)%verts.length];
+    if(!from||!to)continue;
+    const p=pt(from),q=pt(to),bulge=Number(from.bulge||0);
+    if(![...p,...q,bulge].every(Number.isFinite))continue;
+    if(Math.abs(bulge)<1e-9){
+     if(Math.abs(p[1]-q[1])<0.08&&Math.abs(p[0]-q[0])>8)lines.push({xmin:Math.min(p[0],q[0]),xmax:Math.max(p[0],q[0]),y:(p[1]+q[1])/2,layer,index:i});
+    }else{
+     const chord=dist(p,q);
+     if(chord<MM_TOL)continue;
+     const cen=[(p[0]+q[0])/2-(q[1]-p[1])*(1-bulge*bulge)/(4*bulge),
+                (p[1]+q[1])/2+(q[0]-p[0])*(1-bulge*bulge)/(4*bulge)];
+     const rad=chord*(1+bulge*bulge)/(4*Math.abs(bulge));
+     if([...cen,rad].every(Number.isFinite)&&rad>=1&&rad<=40)circles.push({x:cen[0],y:cen[1],r:rad,layer,kind:'BULGE',index:i});
+    }
+   }
   }
  }
  // One centre can be represented by multiple ARC fragments: collapse exactly,
