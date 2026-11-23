@@ -130,3 +130,21 @@ test('DXF convertito senza Model Space segnala assenza entità',()=>{
  const db=cadModule.exports.parseConvertedDxf(sample);
  assert.equal(db.entities.length,0);
 });
+
+test('Da un layer misto individua solo profili chiusi candidati senza selezione automatica',()=>{
+ const P=(x,y)=>({x,y,z:0});
+ const lines=[[[0,0],[25,0]],[[25,0],[25,15]],[[25,15],[0,15]],[[0,15],[0,0]]].map(([a,b])=>({type:'LINE',layer:'0',startPoint:P(...a),endPoint:P(...b)}));
+ const report=cadModule.exports.geometricCandidates(base([...lines,{type:'TEXT',layer:'0'}, {type:'SPLINE',layer:'0'}]));
+ assert.equal(report.candidates.filter(c=>c.kind==='contorno').length,1);
+ assert.equal(report.candidates[0].width,25);
+ assert.equal(report.candidates[0].height,15);
+ assert.throws(()=>cadModule.exports.cutsFromCandidates(report,[]),/Seleziona almeno/);
+ const selected=cadModule.exports.cutsFromCandidates(report,[report.candidates[0].id]);
+ assert.equal(selected.cuts.cutouts.length,1);
+});
+test('Non trasforma un contorno aperto in una lavorazione',()=>{
+ const P=(x,y)=>({x,y,z:0});
+ const open=[[[0,0],[25,0]],[[25,0],[25,15]]].map(([a,b])=>({type:'LINE',layer:'0',startPoint:P(...a),endPoint:P(...b)}));
+ const report=cadModule.exports.geometricCandidates(base(open));
+ assert.equal(report.candidates.length,0);
+});
