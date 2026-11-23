@@ -1,3 +1,4 @@
+# Verifica moduli DWG / STEP locali su main dopo pubblicazione degli asset
 name: Verifica importazione CAD
 on:
   push:
