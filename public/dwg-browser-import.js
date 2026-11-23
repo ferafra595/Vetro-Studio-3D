@@ -350,7 +350,7 @@ function autoHingeNotch(database,clipper){
  if(outline.length>300)return {status:'blocked',reason:'Contorno troppo dettagliato per l’editor corrente'};
  const xs=outline.map(q=>q[0]),ys=outline.map(q=>q[1]),ox=(Math.min(...xs)+Math.max(...xs))/2,oy=(Math.min(...ys)+Math.max(...ys))/2;
  const round=n=>Math.round(n*10000)/10000;
- const cuts={holes:[],cutouts:[outline.map(q=>[round(q[0]-ox),round(q[1]-oy)])],origin:[round(ox),round(oy)]};
+ const cuts={holes:[],cutouts:[outline.map(q=>[round(q[0]-ox),round(q[1]-oy)])],origin:[round(ox),round(oy)],edgeNotch:true,preferredEdge:'left'};
  return {status:'matched',format:'DWG',cuts,dimensions:{diameter:round(p.r*2),centerSpacing:round(p.spacing),notchDepth:round(p.depth)},layer:p.layer,sourceIds:p.sourceIds,warning:'Scasso laterale con due raccordi circolari ricostruito da entità geometriche DWG. I raccordi sono campionati per anteprima DXF (errore geometrico teorico massimo 0,025 mm): obbligatoria verifica dimensionale sul disegno del produttore; non è un programma CNC.'};
 }
 function geometricCandidates(database){
