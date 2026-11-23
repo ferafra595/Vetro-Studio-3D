@@ -21,8 +21,8 @@ test('Blocca DWG in pollici',()=>{
  assert.throws(()=>normalize(base([circle(0,0,7)],1)),/millimetri/);
 });
 test('Richiede conferma esplicita se unità ignote',()=>{
- assert.throws(()=>normalize(base([circle(0,0,7)],undefined)),/unità/);
- assert.equal(normalize(base([circle(0,0,7)],undefined),[],true).cuts.holes.length,1);
+ assert.throws(()=>normalize(base([circle(0,0,7)],null)),/unità/);
+ assert.equal(normalize(base([circle(0,0,7)],null),[],true).cuts.holes.length,1);
 });
 test('Blocca layer misti se non selezionati',()=>{
  assert.throws(()=>normalize(base([circle(0,0,7),{type:'TEXT',layer:'NOTES'}])),/layer/);
