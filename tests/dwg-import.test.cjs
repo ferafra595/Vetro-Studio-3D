@@ -1,7 +1,12 @@
 // Test della normalizzazione geometrica DWG senza richiedere la libreria WASM.
 const assert=require('node:assert/strict');
 const test=require('node:test');
-const {normalize}=require('../public/dwg-browser-import.js');
+const vm=require('node:vm');
+const fs=require('node:fs');
+const path=require('node:path');
+const cadModule={exports:{}};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/dwg-browser-import.js'),'utf8'),{module:cadModule,globalThis:{}});
+const {normalize}=cadModule.exports;
 const base=(entities,unit=4)=>({header:{insunits:unit},entities});
 const circle=(x,y,r,layer='CUT')=>({type:'CIRCLE',layer,center:{x,y,z:0},radius:r,extrusionDirection:{z:1}});
 const poly=(layer='CUT')=>({type:'LWPOLYLINE',layer,flag:1,elevation:0,vertices:[{x:0,y:0,bulge:0},{x:10,y:0,bulge:0},{x:10,y:5,bulge:0},{x:0,y:5,bulge:0}]});
