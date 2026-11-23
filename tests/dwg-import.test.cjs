@@ -182,3 +182,17 @@ test('Non inventa la profondità dello scasso quando mancano i segmenti CAD',()=
  const r=cadModule.exports.autoHingeNotch(base(arcs),clipModule.exports);
  assert.equal(r.status,'not_found');
 });
+
+test('Riconosce la tasca anche se le due linee orizzontali sono segmenti di una POLYLINE',()=>{
+ const clipModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/vendor/polygon-clipping/polygon-clipping.umd.min.js'),'utf8'),{module:clipModule,exports:clipModule.exports});
+ const e=[
+  {type:'LWPOLYLINE',layer:'0',flag:0,vertices:[{x:0,y:0},{x:39,y:0},{x:39,y:59},{x:0,y:59}]},
+  {type:'ARC',layer:'0',center:{x:39,y:0},radius:8,startAngle:0,endAngle:Math.PI},
+  {type:'ARC',layer:'0',center:{x:39,y:59},radius:8,startAngle:Math.PI,endAngle:Math.PI*2}
+ ];
+ const r=cadModule.exports.autoHingeNotch(base(e),clipModule.exports);
+ assert.equal(r.status,'matched',r.reason);
+ assert.equal(r.dimensions.notchDepth,39);
+ assert.equal(r.cuts.cutouts.length,1);
+});
