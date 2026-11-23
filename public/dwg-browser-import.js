@@ -274,7 +274,114 @@ async function readDwg(file) {
  * number, picture, or default template.
  * The geometric union is a single border notch, NOT two drilled holes.
  */
+/* A manufacturer may draw a notch as an OPEN PROFILE in the glass edge:
+   outer-glass-line | horizontal | ARC | inner vertical | ARC | horizontal |
+   outer-glass-line. Only the five middle entities form the notch.
+   This extractor uses the actual connectivity of LINE and ARC entities and
+   refuses ambiguous candidates; it does not assume nominal dimensions.
+ */
+function autoOpenEdgeNotch(database) {
+ const entities=(database?.entities||[]).filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
+ const lines=[],arcs=[],eps=0.085;
+ const matchesPoint=(a,b)=>dist(a,b)<=eps;
+ const finitePoint=p=>p.every(Number.isFinite);
+ for(let i=0;i<entities.length;i++){
+  const e=entities[i],type=String(e.type||'').toUpperCase(),layer=String(e.layer||'0');
+  if(layer.toUpperCase()==='FORMAT')continue;
+  if(type==='LINE'){
+   const a=pt(e.startPoint||e.start),b=pt(e.endPoint||e.end);
+   if(finitePoint(a)&&finitePoint(b)&&dist(a,b)>.15)
+    lines.push({i,layer,a,b,horizontal:Math.abs(a[1]-b[1])<eps,vertical:Math.abs(a[0]-b[0])<eps});
+  }else if(type==='ARC'){
+   const c=pt(e.center),r=Number(e.radius),st=Number(e.startAngle),en=Number(e.endAngle);
+   if(!finitePoint(c)||![r,st,en].every(Number.isFinite)||r<.5||r>100)continue;
+   let delta=(en-st)%(2*Math.PI);if(delta<=0)delta+=2*Math.PI;
+   if(delta>2*Math.PI-0.001)continue;
+   const a=[c[0]+r*Math.cos(st),c[1]+r*Math.sin(st)];
+   const b=[c[0]+r*Math.cos(st+delta),c[1]+r*Math.sin(st+delta)];
+   arcs.push({i,layer,c,r,st,delta,a,b});
+  }
+ }
+ function otherEnd(line,match){
+  if(matchesPoint(line.a,match))return line.b;
+  if(matchesPoint(line.b,match))return line.a;
+  return null;
+ }
+ const found=new Map();
+ for(let ai=0;ai<arcs.length;ai++){
+  for(let bi=ai+1;bi<arcs.length;bi++){
+   let low=arcs[ai],high=arcs[bi];
+   if(low.c[1]>high.c[1])[low,high]=[high,low];
+   if(low.layer!==high.layer||Math.abs(low.c[0]-high.c[0])>.12||Math.abs(low.r-high.r)>.12)continue;
+   const spacing=high.c[1]-low.c[1];
+   if(spacing<low.r*2.5||spacing>250)continue;
+   const verticals=lines.filter(l=>l.layer===low.layer&&l.vertical&&Math.abs(l.a[1]-l.b[1])>1);
+   for(const vertical of verticals){
+    for(const lowEnds of [[low.a,low.b],[low.b,low.a]]){
+     for(const highEnds of [[high.a,high.b],[high.b,high.a]]){
+      const [lowShelf,lowInner]=lowEnds,[highShelf,highInner]=highEnds;
+      if(!((matchesPoint(vertical.a,lowInner)&&matchesPoint(vertical.b,highInner))||
+           (matchesPoint(vertical.b,lowInner)&&matchesPoint(vertical.a,highInner))))continue;
+      const bottomShelves=lines.filter(l=>l.layer===low.layer&&l.horizontal&&l.i!==vertical.i&&
+        (matchesPoint(l.a,lowShelf)||matchesPoint(l.b,lowShelf)));
+      const upperShelves=lines.filter(l=>l.layer===low.layer&&l.horizontal&&l.i!==vertical.i&&
+        (matchesPoint(l.a,highShelf)||matchesPoint(l.b,highShelf)));
+      for(const bottom of bottomShelves)for(const top of upperShelves){
+       const edgeBottom=otherEnd(bottom,lowShelf),edgeTop=otherEnd(top,highShelf);
+       if(!edgeBottom||!edgeTop||Math.abs(edgeBottom[0]-edgeTop[0])>eps||
+           Math.abs(edgeBottom[1]-edgeTop[1])<low.r*3||
+           lowShelf[0]-edgeBottom[0]<3||highShelf[0]-edgeTop[0]<3)continue;
+       // Distinguish the boundary of the glass from an arbitrary open CAD chain:
+       // there must be visible glass-edge extensions both above and below.
+       const borderX=(edgeBottom[0]+edgeTop[0])/2;
+       const continuesBottom=lines.some(l=>l.layer===low.layer&&l.i!==bottom.i&&l.vertical&&
+        Math.abs(l.a[0]-borderX)<eps&&
+        (matchesPoint(l.a,edgeBottom)||matchesPoint(l.b,edgeBottom))&&
+        Math.min(l.a[1],l.b[1])<edgeBottom[1]-2);
+       const continuesTop=lines.some(l=>l.layer===low.layer&&l.i!==top.i&&l.vertical&&
+        Math.abs(l.a[0]-borderX)<eps&&
+        (matchesPoint(l.a,edgeTop)||matchesPoint(l.b,edgeTop))&&
+        Math.max(l.a[1],l.b[1])>edgeTop[1]+2);
+       if(!continuesBottom||!continuesTop)continue;
+       const ids=[low.i,high.i,vertical.i,bottom.i,top.i].sort((a,b)=>a-b);
+       const key=ids.join(',');
+       found.set(key,{low,high,vertical,bottom,top,lowShelf,lowInner,highShelf,highInner,edgeBottom,edgeTop,borderX,spacing,ids});
+      }
+     }
+    }
+   }
+  }
+ }
+ if(found.size!==1)return {status:found.size?'ambiguous':'not_found',matches:found.size,reason:found.size?'Il DWG contiene più scassi laterali possibili con quote differenti; nessun taglio è stato scelto automaticamente.':'Il DWG non contiene una catena univoca di cinque segmenti LINE/ARC collegati al bordo vetro; nessun taglio è stato creato.'};
+ const m=[...found.values()][0],round=n=>Math.round(n*10000)/10000;
+ function arcOriented(arc,from,to){
+  let pts=arcPoints(arc.c,arc.r,arc.st,arc.delta);
+  if(matchesPoint(pts[0],from)&&matchesPoint(pts[pts.length-1],to))return pts;
+  if(matchesPoint(pts[0],to)&&matchesPoint(pts[pts.length-1],from))return pts.reverse();
+  throw Error('ARC non collegato ai segmenti del contorno');
+ }
+ let outline;
+ try{
+  const lower=arcOriented(m.low,m.lowShelf,m.lowInner);
+  const upper=arcOriented(m.high,m.highInner,m.highShelf);
+  outline=cleanedPolygon([m.edgeBottom,m.lowShelf,...lower.slice(1),m.highInner,...upper.slice(1),m.edgeTop]);
+ }catch(err){return {status:'blocked',reason:'Contorno non valido: '+err.message}}
+ const xs=outline.map(p=>p[0]),ys=outline.map(p=>p[1]);
+ const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+ const originX=(minX+maxX)/2,originY=(minY+maxY)/2;
+ const cuts={holes:[],cutouts:[outline.map(p=>[round(p[0]-originX),round(p[1]-originY)])],
+  origin:[round(originX),round(originY)],edgeNotch:true,preferredEdge:'left'};
+ return {status:'matched',format:'DWG',cuts,
+  dimensions:{diameter:round(m.low.r*2),centerSpacing:round(m.spacing),
+   notchDepth:round(m.vertical.a[0]-m.borderX),
+   opening:round(m.edgeTop[1]-m.edgeBottom[1]),
+   overallWidth:round(maxX-m.borderX),overallHeight:round(maxY-minY)},
+  layer:m.low.layer,sourceIds:m.ids,
+  warning:'Scasso sul bordo ricostruito direttamente da cinque entità LINE/ARC contigue e dai prolungamenti del vetro. Le curve nel DXF sono campionate (errore geometrico teorico ≤0,025 mm): verificare tutte le quote e il riferimento sul disegno originale. Non è un programma CNC.'};
+}
 function autoHingeNotch(database,clipper){
+ const open=autoOpenEdgeNotch(database);
+ if(open.status==='matched'||open.status==='ambiguous'||open.status==='blocked')return open;
  const ents=(database?.entities||[]).filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
  const circles=[],lines=[],validLayers=new Set();
  for(let i=0;i<ents.length;i++){
@@ -452,6 +559,6 @@ function toDxf(cuts) {
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
 }
-root.VSDWGImport={convertOriginalDwgToDxf,parseDwg,inspectDwg,autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
-if(typeof module!=='undefined'&&module.exports)module.exports={autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf};
+root.VSDWGImport={convertOriginalDwgToDxf,parseDwg,inspectDwg,autoOpenEdgeNotch,autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+if(typeof module!=='undefined'&&module.exports)module.exports={autoOpenEdgeNotch,autoHingeNotch,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
