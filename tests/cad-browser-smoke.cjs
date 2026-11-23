@@ -24,9 +24,9 @@ const server=http.createServer((req,res)=>{
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/__smoke');
   const dwg=await page.evaluate(async()=>{
-    const mod=await import('/vendor/libredwg/libredwg-web.js');
+    const mod=await import('/vendor/libredwg/dist/libredwg-web.js');
     if(typeof mod.LibreDwg?.create!=='function')throw Error('LibreDWG wrapper not exported');
-    const db=await mod.LibreDwg.create(new URL('/vendor/libredwg/',location.href).href);
+    const db=await mod.LibreDwg.create(new URL('/vendor/libredwg/wasm',location.href).href);
     if(typeof db.dwg_read_data!=='function')throw Error('LibreDWG read API unavailable');
     return true;
   });
