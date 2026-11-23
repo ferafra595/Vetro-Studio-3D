@@ -18,10 +18,10 @@ const fileBadge=(type,meta)=>meta?.[type]?`<span class="tag">${type.toUpperCase(
 function detail(){let it=S.selected,el=$('techDetail');if(!el||!it)return;let meta=safeJson(it.model_meta),cuts=S.cuts;
  el.innerHTML=`<div class="panel" style="margin:0"><div class="flex"><h3>${E(it.name)}</h3><span class="tag ${it.status==='approved'?'':'warning'}">${it.status==='approved'?'Approvato':'Da verificare'}</span></div>
  <div class="grid2"><label class="qfield">Codice<input id="taCode" value="${E(it.code)}"></label><label class="qfield">Nome<input id="taName" value="${E(it.name)}"></label><label class="qfield">Categoria<select id="taCat">${categories.map(([v,t])=>`<option value="${v}" ${it.category===v?'selected':''}>${t}</option>`).join('')}</select></label><label class="qfield">Produttore<input id="taManufacturer" value="${E(it.manufacturer||'')}"></label><label class="qfield">Spessore min. mm<input id="taMin" type="number" step="0.1" value="${it.glass_min}"></label><label class="qfield">Spessore max. mm<input id="taMax" type="number" step="0.1" value="${it.glass_max}"></label><label class="qfield">Prezzo €<input id="taPrice" type="number" step="0.01" value="${it.price}"></label></div>
- <h4>Importa un accessorio (STEP + DXF)</h4>
- <p class="small">Un unico passaggio: <b>STEP</b> per il modello 3D, <b>DXF ASCII</b> per i fori e gli scassi. Il file <b>DWG</b> può essere allegato come originale, ma <b>non viene letto né convertito</b>. La lavorazione resta in bozza fino alla verifica.</p>
- <div class="grid2"><label class="qfield">STEP · modello 3D<input id="taAutoSTEP" type="file" accept=".step,.stp"></label><label class="qfield">DXF · lavorazioni vetro<input id="taAutoDXF" type="file" accept=".dxf"></label><label class="qfield">DWG · allegato originale (facoltativo)<input id="taAutoDWG" type="file" accept=".dwg"></label><label class="qfield">Layer di taglio (separati da virgola)<input id="taAutoLayers" placeholder="es. GLASS_CUT, HOLES"></label></div>
- <div class="actions"><button class="btn primary" id="taAutoButton" onclick="VSTech.autoImport()">Analizza e salva in bozza</button></div>
+ <h4>Importa accessorio e tagli (STEP + DWG)</h4>
+ <p class="small">STEP per visualizzare la cerniera in 3D, DWG per ricavare i tagli. Solo fori circolari e polilinee chiuse rettilinee vengono convertiti; geometrie non supportate vengono bloccate. Importazione in bozza e approvazione dopo controllo dimensionale.</p>
+ <div class="grid2"><label class="qfield">STEP · modello 3D<input id="taAutoSTEP" type="file" accept=".step,.stp"></label><label class="qfield">DXF · lavorazioni vetro<input id="taAutoDXF" type="file" accept=".dxf"></label><label class="qfield">DWG · lavorazioni vetro<input id="taAutoDWG" type="file" accept=".dwg"></label><label class="qfield">Layer di taglio (separati da virgola)<input id="taAutoLayers" placeholder="es. GLASS_CUT, HOLES"></label></div>
+ <label class="qfield" style="display:block;margin:8px 0"><input type="checkbox" id="taDWGMM"> Confermo che il DWG è quotato in mm, qualora non dichiari le unità</label><p class="small">Lettore gratuito LibreDWG, licenza GPL-3.0: verificare gli obblighi prima dell’uso commerciale.</p><div class="actions"><button class="btn primary" id="taAutoButton" onclick="VSTech.autoImport()">Analizza e salva in bozza</button></div>
  <p id="taAutoReport" class="small" role="status" aria-live="polite"></p>
  <div style="border:1px solid #d5e5e9;border-radius:10px;padding:12px;margin-top:12px"><strong>File già archiviati</strong><div class="flex wrap" style="margin-top:8px">${files.map(ext=>`<span style="display:inline-flex;align-items:center;gap:8px;margin-right:10px">${fileBadge(ext,meta)}${meta?.[ext]?`<button class="btn" onclick="VSTech.download('${ext}')">Apri</button>`:''}</span>`).join('')}</div><p class="small" style="margin:8px 0 0">Per aggiornare un singolo allegato senza importare lavorazioni: ${files.map(ext=>`<label style="display:inline-block;margin-right:8px"><span>${ext.toUpperCase()}</span><input id="taFile_${ext}" type="file" accept=".${ext}" style="max-width:145px"><button class="btn" onclick="VSTech.upload('${ext}')">Carica</button></label>`).join('')}</p></div>
  <hr><div class="flex"><h4>Lavorazioni 2D associate</h4><button class="btn" onclick="VSTech.extractDXF()">Rileva da DXF</button></div>
@@ -103,22 +103,33 @@ function loadBrowserEngine(){
 async function autoImport(){
  const id=S.selected?.id;if(!id)return notify('Seleziona prima un accessorio');
  const dwg=$('taAutoDWG')?.files?.[0],step=$('taAutoSTEP')?.files?.[0],dxf=$('taAutoDXF')?.files?.[0];
- if(!dwg&&!step&&!dxf)return notify('Seleziona STEP e/o DXF. DWG è soltanto un allegato originale.');
- if(dwg&&!dxf&&!step)return notify('Il DWG non può essere convertito nel browser: allegalo in File già archiviati, oppure carica anche un DXF per ottenere le lavorazioni.');
+ if(!dwg&&!step&&!dxf)return notify('Seleziona almeno un file STEP o DWG.');
+ 
  if([dwg,step,dxf].some(f=>f&&(!f.size||f.size>12*1024*1024)))return notify('Ogni file deve essere non vuoto e non superare 12 MB');
  const btn=$('taAutoButton'),rep=$('taAutoReport');
  if(btn){btn.disabled=true;btn.textContent='Analisi CAD nel browser…'}
  try{
   const engine=await loadBrowserEngine();
   let result=null,model=null;const warnings=[];
-  if(dxf){const text=await dxf.text();const layers=($('taAutoLayers')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const layers=($('taAutoLayers')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(dwg&&dxf)throw Error('Seleziona DWG oppure DXF per i tagli, non entrambi.');
+  if(dwg) {
+   if(!window.VSDWGImport) await new Promise((resolve,reject)=>{
+    const s=document.createElement('script');s.src='/dwg-browser-import.js?v=1';
+    s.onload=()=>window.VSDWGImport?resolve():reject(Error('Parser DWG non caricato'));
+    s.onerror=()=>reject(Error('Modulo DWG non disponibile'));document.head.append(s);
+   });
+   result=await window.VSDWGImport.parseDwg(dwg,layers,!!$('taDWGMM')?.checked);
+   warnings.push(result.warning);
+  }
+  if(dxf){const text=await dxf.text();
    result=engine.parseDxf(text,layers);
    warnings.push(result.warning,...result.ignored.slice(0,8).map(x=>'Ignorato: '+x));
   }
   if(step){model=await engine.stepToGlb(step);warnings.push(model.warning)}
-  if(dwg&&!dxf)warnings.push('DWG originale archiviabile ma NON letto: esporta il disegno tagli in DXF ASCII con unità millimetri. Nessun taglio è stato estratto dal DWG.');
+
   const nh=result?.cuts.holes.length||0,np=result?.cuts.cutouts.length||0;
-  const message='STEP: '+(model?model.components+' componenti 3D':'non caricato')+'; DXF: '+nh+' fori, '+np+' contorni. '+warnings.join(' | ');
+  const message='STEP: '+(model?model.components+' componenti 3D':'non caricato')+'; '+(dwg?'DWG':dxf?'DXF':'Tagli')+': '+nh+' fori, '+np+' contorni. '+warnings.join(' | ');
   if(rep)rep.textContent=message;
   if(!confirm(message+'\n\nConfermi il salvataggio in BOZZA? Devi controllare tutte le quote e approvare manualmente prima di usare le lavorazioni.'))return;
   const store=async(ext,bytes)=>{
@@ -128,10 +139,10 @@ async function autoImport(){
   for(const [ext,file] of [['dwg',dwg],['step',step],['dxf',dxf]])if(file)await store(ext,file);
   if(model)await store('glb',model.bytes);
   const cutSpec=result?.cuts||structuredClone(S.cuts||{holes:[],cutouts:[],origin:[0,0]});
-  if(!result)warnings.push('Nessun DXF importato: le lavorazioni precedenti rimangono invariate e devono essere verificate.');
+  if(!result)warnings.push('Nessun disegno di taglio interpretato: le lavorazioni precedenti restano invariate.');
   await request('/technical-accessories/'+id,'PATCH',{status:'draft',cut_spec:cutSpec});
   await open(id);
-  if($('taAutoReport'))$('taAutoReport').textContent=message+' · BOZZA DA VERIFICARE (tagli solo da DXF)' ;
+  if($('taAutoReport'))$('taAutoReport').textContent=message+' · BOZZA DA VERIFICARE (quote e orientamento)' ;
   notify('Importazione salvata in bozza. Verifica geometrie, origine e compatibilità prima di approvare.');
  }catch(e){notify('Importazione nel browser non completata: '+e.message);if(rep)rep.textContent=e.message}
  finally{const b=$('taAutoButton');if(b){b.disabled=false;b.textContent='Analizza e salva in bozza'}}
