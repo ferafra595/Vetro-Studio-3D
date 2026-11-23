@@ -369,15 +369,24 @@ function autoOpenEdgeNotch(database) {
  const xs=outline.map(p=>p[0]),ys=outline.map(p=>p[1]);
  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
  const originX=(minX+maxX)/2,originY=(minY+maxY)/2;
+ // Retain the exact CAD circular arcs as DXF polyline bulges. 3D preview
+ // keeps the sampled outline; exported isolated cut can preserve true arcs.
+ const signedBulge=(arc,from)=>{
+  const p=[arc.c[0]+arc.r*Math.cos(arc.st),arc.c[1]+arc.r*Math.sin(arc.st)];
+  return round(Math.tan(arc.delta/4)*(matchesPoint(p,from)?1:-1));
+ };
+ const exactVertices=[m.edgeBottom,m.lowShelf,m.lowInner,m.highInner,m.highShelf,m.edgeTop];
+ const exactBulges=[0,signedBulge(m.low,m.lowShelf),0,signedBulge(m.high,m.highInner),0,0];
+ const exactPaths=[{points:exactVertices.map(p=>[round(p[0]-originX),round(p[1]-originY)]),bulges:exactBulges}];
  const cuts={holes:[],cutouts:[outline.map(p=>[round(p[0]-originX),round(p[1]-originY)])],
-  origin:[round(originX),round(originY)],edgeNotch:true,preferredEdge:'left'};
+  exactPaths,origin:[round(originX),round(originY)],edgeNotch:true,preferredEdge:'left'};
  return {status:'matched',format:'DWG',cuts,
   dimensions:{diameter:round(m.low.r*2),centerSpacing:round(m.spacing),
    notchDepth:round(m.vertical.a[0]-m.borderX),
    opening:round(m.edgeTop[1]-m.edgeBottom[1]),
    overallWidth:round(maxX-m.borderX),overallHeight:round(maxY-minY)},
   layer:m.low.layer,sourceIds:m.ids,
-  warning:'Scasso sul bordo ricostruito direttamente da cinque entità LINE/ARC contigue e dai prolungamenti del vetro. Le curve nel DXF sono campionate (errore geometrico teorico ≤0,025 mm): verificare tutte le quote e il riferimento sul disegno originale. Non è un programma CNC.'};
+  warning:'Scasso sul bordo ricostruito direttamente da cinque entità LINE/ARC contigue e dai prolungamenti del vetro. Il DXF della lavorazione preserva gli ARC originali tramite bulge, mentre l’anteprima 2D/3D è campionata (errore ≤0,025 mm): verificare tutte le quote e il riferimento sul disegno originale. Non è un programma CNC.'};
 }
 function autoHingeNotch(database,clipper){
  const open=autoOpenEdgeNotch(database);
@@ -551,10 +560,19 @@ function toDxf(cuts) {
   if(!(hole.r>0&&hole.r<=300))throw Error('Raggio foro non valido');
   out.push('0','CIRCLE','8','GLASS_CUT','10',n(hole.x),'20',n(hole.y),'30','0','40',n(hole.r));
  }
- for(const points of cuts.cutouts) {
+ for(let i=0;i<cuts.cutouts.length;i++){
+  const fallback=cuts.cutouts[i],exact=Array.isArray(cuts.exactPaths)?cuts.exactPaths[i]:null;
+  const validExact=exact&&Array.isArray(exact.points)&&Array.isArray(exact.bulges)&&
+   exact.points.length>=3&&exact.points.length<=300&&exact.points.length===exact.bulges.length&&
+   exact.points.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite))&&
+   exact.bulges.every(Number.isFinite);
+  const points=validExact?exact.points:fallback;
   if(!Array.isArray(points)||points.length<3||points.length>300)throw Error('Contorno DXF non valido');
   out.push('0','LWPOLYLINE','8','GLASS_CUT','90',String(points.length),'70','1');
-  for(const [x,y] of points)out.push('10',n(x),'20',n(y));
+  for(let j=0;j<points.length;j++){
+   const [x,y]=points[j];out.push('10',n(x),'20',n(y));
+   if(validExact&&Math.abs(exact.bulges[j])>1e-12)out.push('42',n(exact.bulges[j]));
+  }
  }
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
