@@ -33,9 +33,11 @@ test('Blocca layer misti se non selezionati',()=>{
  assert.throws(()=>normalize(base([circle(0,0,7),{type:'TEXT',layer:'NOTES'}])),/layer/);
  assert.equal(normalize(base([circle(0,0,7),{type:'TEXT',layer:'NOTES'}]),['CUT']).cuts.holes.length,1);
 });
-test('Blocca contorni curvi non riconosciuti',()=>{
+test('Riconosce i contorni curvi Bulge senza inventare fori',()=>{
  const p=poly();p.vertices[0].bulge=0.5;
- assert.throws(()=>normalize(base([p])),/LWPOLYLINE/);
+ const result=normalize(base([p]));
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.curved,true);
 });
 test('Blocca INSERT sul layer di taglio',()=>{
  assert.throws(()=>normalize(base([{type:'INSERT',layer:'CUT'}])),/INSERT/);
