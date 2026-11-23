@@ -260,8 +260,50 @@ async function readDwg(file) {
  if(!db.entities.length)throw Error('DWG convertito, ma nessuna entità nel Model Space. Le geometrie potrebbero essere solo all’interno di blocchi o nel Layout.');
  return db;
 }
+function geometricCandidates(database){
+ const entities=(database?.entities||[]).filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
+ const candidates=[],issues=[];
+ for(let index=0;index<entities.length;index++){
+  const e=entities[index],type=String(e.type||'').toUpperCase(),layer=String(e.layer||'0');
+  try{
+   let points=null,hole=null;
+   if(type==='LWPOLYLINE'||type==='POLYLINE_2D'){
+    points=polylinePoints(e);
+   }else if(type==='CIRCLE'){
+    const r=Number(e.radius),c=e.center||{};
+    if(![r,c.x,c.y].every(Number.isFinite)||r<=0||r>300)throw Error('coordinate o diametro non validi');
+    hole={x:Number(c.x),y:Number(c.y),r};
+   }else continue;
+   if(points){
+    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+    const w=Math.max(...xs)-Math.min(...xs),h=Math.max(...ys)-Math.min(...ys);
+    if(w<0.1||h<0.1||w>3000||h>3000)throw Error('dimensioni fuori scala');
+    candidates.push({id:'e'+index,layer,kind:'contorno',type,width:+w.toFixed(3),height:+h.toFixed(3),points});
+   }else{
+    candidates.push({id:'e'+index,layer,kind:'foro',type,width:+(hole.r*2).toFixed(3),height:+(hole.r*2).toFixed(3),hole});
+   }
+  }catch(err){
+   if(issues.length<50)issues.push({layer,type,index,reason:String(err.message)});
+  }
+ }
+ return {candidates:candidates.slice(0,150),issues,detected:candidates.length,truncated:candidates.length>150};
+}
+function cutsFromCandidates(report,ids){
+ const selected=new Set(ids||[]);
+ const list=(report?.candidates||[]).filter(item=>selected.has(item.id));
+ if(!list.length)throw Error('Seleziona almeno un profilo o foro nella diagnosi CAD');
+ if(list.length>60)throw Error('Selezione troppo ampia: verifica i tagli individualmente');
+ const holes=list.filter(x=>x.kind==='foro').map(x=>x.hole);
+ const cutouts=list.filter(x=>x.kind==='contorno').map(x=>x.points);
+ if(!holes.length&&!cutouts.length)throw Error('Nessun elemento geometrico selezionato');
+ const all=[...holes.flatMap(h=>[[h.x-h.r,h.y-h.r],[h.x+h.r,h.y+h.r]]),...cutouts.flat()];
+ const xs=all.map(x=>x[0]),ys=all.map(x=>x[1]),cx=(Math.min(...xs)+Math.max(...xs))/2,cy=(Math.min(...ys)+Math.max(...ys))/2;
+ const round=n=>Math.round(n*10000)/10000;
+ return {cuts:{holes:holes.map(h=>({x:round(h.x-cx),y:round(h.y-cy),r:round(h.r)})),cutouts:cutouts.map(p=>p.map(q=>[round(q[0]-cx),round(q[1]-cy)])),origin:[round(cx),round(cy)]},format:'DWG',warning:'Elementi geometrici selezionati manualmente da layer misti: controllare dimensioni e corrispondenza esatta con il disegno del produttore, non utilizzare direttamente per CNC.',selectedIds:[...selected]};
+}
 async function inspectDwg(file){
- return summarize(await readDwg(file));
+ const db=await readDwg(file);
+ return {...summarize(db),...geometricCandidates(db)};
 }
 async function parseDwg(file,layers=[],unitConfirmed=false){
  return normalize(await readDwg(file),layers,unitConfirmed);
@@ -284,6 +326,6 @@ function toDxf(cuts) {
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
 }
-root.VSDWGImport={parseDwg,inspectDwg,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
-if(typeof module!=='undefined'&&module.exports)module.exports={parseConvertedDxf,normalize,summarize,toDxf};
+root.VSDWGImport={parseDwg,inspectDwg,geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+if(typeof module!=='undefined'&&module.exports)module.exports={geometricCandidates,cutsFromCandidates,parseConvertedDxf,normalize,summarize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
