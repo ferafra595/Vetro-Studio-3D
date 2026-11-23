@@ -27,8 +27,9 @@ jobs:
         run: node --test tests/dwg-import.test.cjs
       - name: Verifica la presenza delle librerie CAD locali
         run: |
-          test -s public/vendor/libredwg/libredwg-web.wasm
-          test -s public/vendor/libredwg/libredwg-web.js
+          test -s public/vendor/libredwg/wasm/libredwg-web.wasm
+          test -s public/vendor/libredwg/wasm/libredwg-web.js
+          test -s public/vendor/libredwg/dist/libredwg-web.js
           test -s public/vendor/occt/occt-import-js.wasm
           test -s public/vendor/occt/occt-import-js.js
       - name: Installa browser smoke runner
