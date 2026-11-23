@@ -28,7 +28,7 @@ test('Taglio esterno alla lastra non viene applicato',()=>{
 });
 test('Una lastra senza tagli mantiene il contorno originale',()=>{
  const r=difference(glass,[],clipping);
- assert.deepEqual(r.outline,glass);
+ assert.equal(JSON.stringify(r.outline),JSON.stringify(glass));
  assert.equal(r.removedArea,0);
 });
 test('Due scassi su bordi opposti possono coesistere',()=>{
