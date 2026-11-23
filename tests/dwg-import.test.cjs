@@ -40,3 +40,29 @@ test('Blocca contorni curvi non riconosciuti',()=>{
 test('Blocca INSERT sul layer di taglio',()=>{
  assert.throws(()=>normalize(base([{type:'INSERT',layer:'CUT'}])),/INSERT/);
 });
+
+test('DXF generato mantiene quote, millimetri e fori',()=>{
+ const source=normalize(base([circle(100,80,7),circle(130,80,5)]));
+ const dxf=toDxf(source.cuts);
+ assert.match(dxf,/\$INSUNITS/);
+ assert.match(dxf,/GLASS_CUT/);
+ const cadModule2={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/cad-browser-import.js'),'utf8'),{module:cadModule2,globalThis:{}});
+ const result=cadModule2.exports.parseDxf(dxf);
+ assert.equal(result.cuts.holes.length,2);
+ assert.equal(result.cuts.holes[0].r,7);
+ assert.equal(result.cuts.holes[1].r,5);
+ assert.equal(result.cuts.cutouts.length,0);
+});
+test('Non consente esportazione DXF senza geometrie',()=>{
+ assert.throws(()=>toDxf({holes:[],cutouts:[]}),/Non ci sono/);
+});
+test('Contorno chiuso esportato e reimportato come sagoma',()=>{
+ const source=normalize(base([poly()]));
+ const dxf=toDxf(source.cuts);
+ const cadModule2={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/cad-browser-import.js'),'utf8'),{module:cadModule2,globalThis:{}});
+ const result=cadModule2.exports.parseDxf(dxf);
+ assert.equal(result.cuts.cutouts.length,1);
+ assert.equal(result.cuts.cutouts[0].length,4);
+});
