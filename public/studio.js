@@ -164,6 +164,7 @@ function technicalPatternValid(owner,spec,x,y){
  let result;
  try{result=technicalGlassShape(owner,added)}
  catch(err){return 'Taglio non applicabile: '+err.message}
+ if(spec.edgeNotch&&!result.edgeNotch)return 'Lo scasso della cerniera deve essere aperto sul bordo della lastra. Posizionalo sul lato previsto.';
  for(const h of [...existing,...newHoles]){
   const check=window.VSGeometry.validate(result.outline,[h]);
   if(!check.ok)return 'Una foratura tocca uno scasso o il bordo: '+check.error;
