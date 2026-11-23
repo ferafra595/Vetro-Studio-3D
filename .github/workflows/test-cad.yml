@@ -50,4 +50,6 @@ jobs:
           name: vetrostudio-cad-runtime
           path: |
             public/vendor/libredwg/
+            public/vendor/polygon-clipping/
+            public/dwg-browser-import.js
           retention-days: 1
