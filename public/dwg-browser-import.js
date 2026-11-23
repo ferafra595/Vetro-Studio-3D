@@ -262,31 +262,61 @@ async function readDwg(file) {
 }
 function geometricCandidates(database){
  const entities=(database?.entities||[]).filter(e=>e&&!e.isInPaperSpace&&e.isVisible!==true&&e.isVisible!==1);
- const candidates=[],issues=[];
+ const candidates=[],issues=[],segments=[];
+ function addPoly(id,layer,type,points){
+  const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+  const w=Math.max(...xs)-Math.min(...xs),h=Math.max(...ys)-Math.min(...ys);
+  if(w<0.1||h<0.1||w>3000||h>3000)throw Error('dimensioni fuori scala');
+  candidates.push({id,layer,kind:'contorno',type,width:+w.toFixed(3),height:+h.toFixed(3),points});
+ }
  for(let index=0;index<entities.length;index++){
   const e=entities[index],type=String(e.type||'').toUpperCase(),layer=String(e.layer||'0');
   try{
-   let points=null,hole=null;
    if(type==='LWPOLYLINE'||type==='POLYLINE_2D'){
-    points=polylinePoints(e);
+    addPoly('e'+index,layer,type,polylinePoints(e));
    }else if(type==='CIRCLE'){
     const r=Number(e.radius),c=e.center||{};
     if(![r,c.x,c.y].every(Number.isFinite)||r<=0||r>300)throw Error('coordinate o diametro non validi');
-    hole={x:Number(c.x),y:Number(c.y),r};
-   }else continue;
-   if(points){
-    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
-    const w=Math.max(...xs)-Math.min(...xs),h=Math.max(...ys)-Math.min(...ys);
-    if(w<0.1||h<0.1||w>3000||h>3000)throw Error('dimensioni fuori scala');
-    candidates.push({id:'e'+index,layer,kind:'contorno',type,width:+w.toFixed(3),height:+h.toFixed(3),points});
-   }else{
-    candidates.push({id:'e'+index,layer,kind:'foro',type,width:+(hole.r*2).toFixed(3),height:+(hole.r*2).toFixed(3),hole});
+    candidates.push({id:'e'+index,layer,kind:'foro',type,width:+(r*2).toFixed(3),height:+(r*2).toFixed(3),hole:{x:Number(c.x),y:Number(c.y),r}});
+   }else if(type==='LINE'){
+    const a=pt(e.startPoint||e.start),b=pt(e.endPoint||e.end);
+    if(!a.every(Number.isFinite)||!b.every(Number.isFinite)||dist(a,b)<MM_TOL)throw Error('segmento aperto non valido');
+    segments.push({id:index,layer,pts:[a,b]});
+   }else if(type==='ARC'){
+    const c=pt(e.center),r=Number(e.radius),start=Number(e.startAngle),end=Number(e.endAngle);
+    if(![...c,r,start,end].every(Number.isFinite)||r<=0)throw Error('arco non valido');
+    let d=(end-start)%(2*Math.PI);if(d<=0)d+=2*Math.PI;
+    segments.push({id:index,layer,pts:arcPoints(c,r,start,d)});
    }
-  }catch(err){
-   if(issues.length<50)issues.push({layer,type,index,reason:String(err.message)});
+  }catch(err){if(issues.length<80)issues.push({layer,type,index,reason:String(err.message)})}
+ }
+ // Find closed paths among LINE/ARC fragments. Unconnected and ambiguous networks
+ // stay excluded: these often represent annotations or construction geometry.
+ const byLayer=new Map();
+ for(const seg of segments){if(!byLayer.has(seg.layer))byLayer.set(seg.layer,[]);byLayer.get(seg.layer).push(seg)}
+ for(const [layer,list] of byLayer){
+  const taken=new Set();
+  for(const seed of list){
+   if(taken.has(seed.id))continue;
+   const path=seed.pts.slice(),ids=[seed.id];let closed=false,ambiguous=false;
+   for(let guard=0;guard<list.length;guard++){
+    const first=path[0],last=path.at(-1);
+    if(path.length>2&&dist(first,last)<=MM_TOL){closed=true;break}
+    const matches=list.filter(seg=>!taken.has(seg.id)&&!ids.includes(seg.id)&&(dist(seg.pts[0],last)<=MM_TOL||dist(seg.pts.at(-1),last)<=MM_TOL));
+    if(matches.length!==1){ambiguous=matches.length>1;break}
+    const part=matches[0],pts=dist(part.pts[0],last)<=MM_TOL?part.pts:part.pts.slice().reverse();
+    path.push(...pts.slice(1));ids.push(part.id);
+    if(path.length>400)break;
+   }
+   if(closed){
+    try{const poly=cleanedPolygon(path);addPoly('chain'+seed.id,layer,'LINE+ARC',poly);ids.forEach(id=>taken.add(id))}
+    catch(err){if(issues.length<80)issues.push({layer,type:'LINE+ARC',index:seed.id,reason:String(err.message)})}
+   }else if(ambiguous&&issues.length<80){
+    issues.push({layer,type:'LINE+ARC',index:seed.id,reason:'giunzione ambigua: non selezionata'});
+   }
   }
  }
- return {candidates:candidates.slice(0,150),issues,detected:candidates.length,truncated:candidates.length>150};
+ return {candidates:candidates.slice(0,150),issues,detected:candidates.length,truncated:candidates.length>150,unjoinedSegments:segments.length};
 }
 function cutsFromCandidates(report,ids){
  const selected=new Set(ids||[]);
