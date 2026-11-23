@@ -250,6 +250,8 @@ test('GS-MS reale: profilo aperto LINE/ARC riconosciuto con dimensioni CAD misur
  assert.equal(parsed.cuts.exactPaths?.[0]?.bulges?.filter(b=>Math.abs(b)>0.1).length,2);
  const dxf=cadModule.exports.toDxf(parsed.cuts);
  assert.equal((dxf.match(/\n42\n/g)||[]).length,2);
+ assert.ok(dxf.includes('100\nAcDbEntity\n8\nGLASS_CUT\n100\nAcDbPolyline\n'));
+ assert.ok(dxf.includes('$INSUNITS\n70\n4\n'));
  const outline=parsed.cuts.cutouts[0];
  assert.ok(outline.length>30);
  const xs=outline.map(p=>p[0]),offset=-Math.min(...xs);
