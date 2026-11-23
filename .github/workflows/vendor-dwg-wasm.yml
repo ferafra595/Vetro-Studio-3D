@@ -42,5 +42,6 @@ jobs:
           git add -A public/vendor/libredwg public/vendor/occt
           if ! git diff --cached --quiet; then
             git commit -m "build: vendor LibreDWG wasm to same-origin static asset"
+            git pull --rebase origin main
             git push origin HEAD:main
           fi
