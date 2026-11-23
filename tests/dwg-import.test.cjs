@@ -148,3 +148,37 @@ test('Non trasforma un contorno aperto in una lavorazione',()=>{
  const report=cadModule.exports.geometricCandidates(base(open));
  assert.equal(report.candidates.length,0);
 });
+
+test('Riconosce AUTOMATICAMENTE tasca laterale con due Ø16 e interasse 59 mm, senza selezioni',()=>{
+ const clipModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/vendor/polygon-clipping/polygon-clipping.umd.min.js'),'utf8'),{module:clipModule,exports:clipModule.exports});
+ const P=(x,y)=>({x,y,z:0});
+ const lines=[
+  {type:'LINE',layer:'0',startPoint:P(0,0),endPoint:P(39,0)},
+  {type:'LINE',layer:'0',startPoint:P(0,59),endPoint:P(39,59)}
+ ];
+ const arcs=[
+  {type:'ARC',layer:'0',center:P(39,0),radius:8,startAngle:0,endAngle:Math.PI},
+  {type:'ARC',layer:'0',center:P(39,59),radius:8,startAngle:Math.PI,endAngle:Math.PI*2}
+ ];
+ const garbage=[{type:'SPLINE',layer:'0'},{type:'DIMENSION',layer:'FORMAT'},{type:'CIRCLE',layer:'0',center:P(400,400),radius:3}];
+ const r=cadModule.exports.autoHingeNotch(base([...lines,...arcs,...garbage]),clipModule.exports);
+ assert.equal(r.status,'matched',r.reason);
+ assert.equal(r.dimensions.diameter,16);
+ assert.equal(r.dimensions.centerSpacing,59);
+ assert.equal(r.dimensions.notchDepth,39);
+ assert.equal(r.cuts.holes.length,0);
+ assert.equal(r.cuts.cutouts.length,1);
+ assert.ok(r.cuts.cutouts[0].length>12);
+});
+test('Non inventa la profondità dello scasso quando mancano i segmenti CAD',()=>{
+ const clipModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/vendor/polygon-clipping/polygon-clipping.umd.min.js'),'utf8'),{module:clipModule,exports:clipModule.exports});
+ const P=(x,y)=>({x,y,z:0});
+ const arcs=[
+  {type:'ARC',layer:'0',center:P(39,0),radius:8,startAngle:0,endAngle:Math.PI},
+  {type:'ARC',layer:'0',center:P(39,59),radius:8,startAngle:Math.PI,endAngle:Math.PI*2}
+ ];
+ const r=cadModule.exports.autoHingeNotch(base(arcs),clipModule.exports);
+ assert.equal(r.status,'not_found');
+});
