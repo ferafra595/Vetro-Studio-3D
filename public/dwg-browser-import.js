@@ -155,26 +155,116 @@ function normalize(database,layers=[],unitConfirmed=false) {
  const round=n=>Math.round(n*10000)/10000;
  return {cuts:{holes:holes.map(h=>({x:round(h.x-cx),y:round(h.y-cy),r:round(h.r)})),cutouts:polys.map(poly=>poly.map(p=>[round(p[0]-cx),round(p[1]-cy)])),origin:[round(cx),round(cy)]},layers:names,report,ignored,curved,approximationMm:curved?CHORD_ERROR:0,warning:'DWG in bozza: origine centrata automaticamente. '+(curved?'Le curve sono campionate con errore teorico massimo 0,025 mm per ANTEPRIMA, non per CNC. ':'')+'Verificare interassi, geometrie e scheda del produttore.',format:'DWG'};
 }
+/* LibreDWG's convert() is NOT an entity database converter. Its public DWG→DXF
+   API returns the actual CAD file, whose ENTITIES section must be parsed here. */
+function parseConvertedDxf(text){
+ if(typeof text!=='string'||!text.trim())throw Error('LibreDWG: file DXF convertito vuoto');
+ const lines=text.replace(/\r/g,'').split('\n'),pairs=[];
+ for(let i=0;i+1<lines.length;i+=2)pairs.push([lines[i].trim(),lines[i+1].trim()]);
+ let section='',current=null,entities=[],units='unknown';
+ const number=(arr,code,fallback=0)=>{
+  const found=arr.find(x=>x[0]===String(code));
+  return found?Number(found[1]):fallback;
+ };
+ const value=(arr,code,fallback='')=>{
+  const found=arr.find(x=>x[0]===String(code));
+  return found?found[1]:fallback;
+ };
+ let haveHeader=false,haveEntities=false;
+ for(let i=0;i<pairs.length;i++){
+  const [key,val]=pairs[i];
+  if(key==='0'&&val==='SECTION'&&pairs[i+1]?.[0]==='2'){
+   if(current){entities.push(current);current=null}
+   section=pairs[++i][1];
+   if(section==='HEADER')haveHeader=true;
+   if(section==='ENTITIES')haveEntities=true;
+   continue;
+  }
+  if(key==='0'&&val==='ENDSEC'){
+   if(current){entities.push(current);current=null}
+   section='';continue;
+  }
+  if(section==='HEADER'){
+   if(key==='9'&&val==='$INSUNITS'&&pairs[i+1]?.[0]==='70'){
+    units=Number(pairs[++i][1]);
+   }
+   continue;
+  }
+  if(section!=='ENTITIES')continue;
+  if(key==='0'){
+   if(current)entities.push(current);
+   current={type:val,data:[]};
+  }else if(current)current.data.push([key,val]);
+ }
+ if(current)entities.push(current);
+ if(!haveEntities)throw Error('Il DXF ricavato dal DWG non contiene la sezione ENTITIES (modello non utilizzabile)');
+ const result=[];
+ // POLYLINE+VERTEX+SEQEND are one entity; retain bulges/closed flag
+ for(let i=0;i<entities.length;i++){
+  const item=entities[i],type=item.type.toUpperCase(),d=item.data;
+  if(type==='SEQEND')continue;
+  if(type==='POLYLINE'){
+   const points=[];
+   while(entities[i+1]?.type.toUpperCase()==='VERTEX'){
+    const v=entities[++i].data;
+    points.push({x:number(v,10,NaN),y:number(v,20,NaN),bulge:number(v,42,0)});
+   }
+   const f=number(d,70,0);
+   result.push({type:'POLYLINE_2D',layer:value(d,8,'0'),flag:f,vertices:points,elevation:number(d,30,0),isInPaperSpace:number(d,67,0)===1});
+   continue;
+  }
+  const layer=value(d,8,'0'),space=number(d,67,0)===1;
+  let entity={type,layer,isInPaperSpace:space};
+  if(type==='LINE'){
+   entity.startPoint={x:number(d,10,NaN),y:number(d,20,NaN),z:number(d,30,0)};
+   entity.endPoint={x:number(d,11,NaN),y:number(d,21,NaN),z:number(d,31,0)};
+  }else if(type==='CIRCLE'||type==='ARC'){
+   entity.center={x:number(d,10,NaN),y:number(d,20,NaN),z:number(d,30,0)};
+   entity.radius=number(d,40,NaN);
+   if(type==='ARC'){
+    entity.startAngle=number(d,50,NaN)*Math.PI/180;
+    entity.endAngle=number(d,51,NaN)*Math.PI/180;
+   }
+  }else if(type==='LWPOLYLINE'){
+   const vert=[];let p=null;
+   for(const [code,val] of d){
+    if(code==='10'){if(p)vert.push(p);p={x:Number(val),y:NaN,bulge:0};}
+    if(code==='20'&&p)p.y=Number(val);
+    if(code==='42'&&p)p.bulge=Number(val);
+   }
+   if(p)vert.push(p);
+   entity.flag=number(d,70,0);
+   entity.vertices=vert;
+   entity.elevation=number(d,38,0);
+  }else if(type==='INSERT'){
+   entity.blockName=value(d,2);
+  }
+  result.push(entity);
+ }
+ return {header:{insunits:units},entities:result,sourceInfo:{haveHeader,haveEntities,source:'LibreDWG DWG→DXF',count:result.length}};
+}
 async function readDwg(file) {
  if(!file||!/\.dwg$/i.test(file.name)||file.size<128||file.size>12*1024*1024)throw Error('Seleziona un DWG valido (max 12 MB)');
  const buf=new Uint8Array(await file.arrayBuffer());
  if(!/^AC10\d\d/.test(new TextDecoder().decode(buf.subarray(0,6))))throw Error('Firma DWG non riconosciuta');
  if(!engine)engine=import(MODULE).then(async lib=>({
-   parser:await lib.LibreDwg.create(BASE),kind:lib.Dwg_File_Type.DWG
+   parser:await lib.LibreDwg.create(BASE)
  })).catch(err=>{engine=null;throw Error('Motore LibreDWG non disponibile: '+err.message)});
- const {parser,kind}=await engine;
- const ptr=parser.dwg_read_data(buf,kind);
- if(!ptr)throw Error('DWG non leggibile dal motore LibreDWG');
- try{return parser.convert(ptr)}
- finally{try{parser.dwg_free(ptr)}catch(_){}}
+ const {parser}=await engine;
+ // Use the actual published LibreDWG DWG-to-DXF API; do not call convert(ptr).
+ const converted=parser.dwg_write_dxf(buf);
+ if(!converted||converted.length<20)throw Error('LibreDWG non è riuscito a convertire il DWG in DXF. Il file può essere incompatibile o danneggiato.');
+ const decoded=new TextDecoder('utf-8').decode(converted);
+ if(!decoded.includes('SECTION'))throw Error('La conversione LibreDWG non ha restituito un DXF ASCII valido');
+ const db=parseConvertedDxf(decoded);
+ if(!db.entities.length)throw Error('DWG convertito, ma nessuna entità nel Model Space. Le geometrie potrebbero essere solo all’interno di blocchi o nel Layout.');
+ return db;
 }
-async function inspectDwg(file) {
- const db=await readDwg(file);
- return summarize(db);
+async function inspectDwg(file){
+ return summarize(await readDwg(file));
 }
-async function parseDwg(file,layers=[],unitConfirmed=false) {
- const db=await readDwg(file);
- return normalize(db,layers,unitConfirmed);
+async function parseDwg(file,layers=[],unitConfirmed=false){
+ return normalize(await readDwg(file),layers,unitConfirmed);
 }
 function toDxf(cuts) {
  if(!cuts||!Array.isArray(cuts.holes)||!Array.isArray(cuts.cutouts))throw Error('Geometrie di taglio mancanti');
@@ -194,6 +284,6 @@ function toDxf(cuts) {
  out.push('0','ENDSEC','0','EOF');
  return out.join('\n')+'\n';
 }
-root.VSDWGImport={parseDwg,inspectDwg,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
-if(typeof module!=='undefined'&&module.exports)module.exports={normalize,summarize,toDxf};
+root.VSDWGImport={parseDwg,inspectDwg,parseConvertedDxf,normalize,summarize,toDxf,license:'LibreDWG GPL-3.0',version:PACKAGE_VERSION};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseConvertedDxf,normalize,summarize,toDxf};
 })(typeof window!=='undefined'?window:globalThis);
