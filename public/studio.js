@@ -564,7 +564,7 @@ async function loadTechnicalGLB(o,placeholder){
   const oriented=orientHardware(THREE,o.mountEdge,mount);
   oriented.position.set(N(o.mountX),N(o.mountY),N(o.mountZ));
   placeholder.traverse(mesh=>{mesh.geometry?.dispose();mesh.material?.dispose();});
-  placeholder.clear();placeholder.add(oriented);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});highlight();
+  placeholder.clear();placeholder.add(oriented);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});updateSlideLimits();highlight();
  }catch(e){console.warn('GLB accessorio non disponibile:',e)}
 }
 function disposeModel(group){
@@ -593,7 +593,136 @@ function closedTrackOffset(object){
   (object.kind==='accessory'&&object.name==='Maniglia'?glassPanels().find(o=>o.name?.startsWith('Anta')&&Math.abs(o.x-object.x)<o.w/2):null);
  return panel?showerTrackOffset(panel):0;
 }
-function drawScene(){if(!V?.studio)return;const group=V.group;disposeModel(group);for(const o of model().objects){if(o.technicalSpec)linkedAccessoryPosition(o);let mesh=createMesh(o);mesh.position.z+=closedTrackOffset(o);group.add(mesh);renderMeshes.set(o.id,mesh);if(o.technicalId)loadTechnicalGLB(o,mesh)}highlight()}
+const slideLimits=new Map(),hingePlates=new Map();
+function legacyHandle(o,panel){
+ return ['D02','D03','D04','D05'].includes(model().studio.template)&&o.kind==='accessory'&&o.name==='Maniglia'&&!o.attachTo&&Math.abs(o.x-panel.x)<panel.w/2;
+}
+function doorParts(panel){
+ return model().objects.filter(o=>o.id===panel.id||o.attachTo===panel.id||legacyHandle(o,panel));
+}
+function slideDirection(panel,opening){
+ return !panel.openingType&&['D02','D04'].includes(model().studio.template)?-1:opening.side;
+}
+function doorBounds(object,frame){
+ const root=renderMeshes.get(object.id);
+ if(!root)return [];
+ const Three=T(),boxes=[];
+ root.updateWorldMatrix(true,true);
+ const inverseRoot=root.matrixWorld.clone().invert();
+ const pose=new Three.Matrix4().compose(
+  new Three.Vector3(object.x,object.y,object.z+closedTrackOffset(object)),
+  new Three.Quaternion().setFromEuler(new Three.Euler(...['rx','ry','rz'].map(key=>Three.MathUtils.degToRad(N(object[key]))))),
+  root.scale
+ );
+ const local=frame.clone().multiply(pose).multiply(inverseRoot);
+ root.traverse(mesh=>{
+  if(!mesh.isMesh)return;
+  mesh.geometry.computeBoundingBox();
+  boxes.push(mesh.geometry.boundingBox.clone().applyMatrix4(local.clone().multiply(mesh.matrixWorld)));
+ });
+ return boxes;
+}
+function curveTravel(panel,opening){
+ const curve=panel.curve;
+ let limit=curve.end-curve.start-1;
+ const clearanceAngle=3/curve.radius*180/Math.PI;
+ const bounds=doorParts(panel).filter(o=>o.id!==panel.id).flatMap(o=>doorBounds(o,new (T().Matrix4)()));
+ for(const fixed of glassPanels()){
+  const arc=fixed.curve;
+  if(!arc||arc.x!==curve.x||arc.z!==curve.z||doorOpening(fixed))continue;
+  const inner=arc.radius-fixed.d/2,outer=arc.radius+fixed.d/2;
+  for(const box of bounds){
+   if(box.min.y>=fixed.y+fixed.h/2||box.max.y<=fixed.y-fixed.h/2)continue;
+   const x0=box.min.x-arc.x,x1=box.max.x-arc.x,z0=box.min.z-arc.z,z1=box.max.z-arc.z;
+   const near=Math.hypot(Math.max(0,x0,-x1),Math.max(0,z0,-z1));
+   const far=Math.hypot(Math.max(Math.abs(x0),Math.abs(x1)),Math.max(Math.abs(z0),Math.abs(z1)));
+   if(near>=outer||far<=inner)continue;
+   const angles=[x0,x1].flatMap(x=>[z0,z1].map(z=>Math.atan2(z,x)*180/Math.PI));
+   const gap=opening.side>0?arc.start-Math.max(...angles):Math.min(...angles)-arc.end;
+   if(gap>=0)limit=Math.min(limit,Math.max(0,gap-clearanceAngle));
+  }
+ }
+ return limit;
+}
+function updateSlideLimits(){
+ slideLimits.clear();
+ const Three=T(),objects=model().objects;
+ for(const panel of glassPanels()){
+  const opening=doorOpening(panel);
+  if(opening?.type==='curve'){slideLimits.set(panel.id,curveTravel(panel,opening));continue;}
+  if(opening?.type!=='slide')continue;
+  const direction=slideDirection(panel,opening),clearance=3;
+  let limit=panel.slideTravel??panel.w*.92;
+  const frame=new Three.Matrix4().makeRotationFromEuler(new Three.Euler(...['rx','ry','rz'].map(key=>Three.MathUtils.degToRad(N(panel[key])))));
+  frame.setPosition(panel.x,panel.y,panel.z+closedTrackOffset(panel)).invert();
+  const parts=doorParts(panel);
+  const moving=parts.flatMap(o=>doorBounds(o,frame));
+  const blockers=objects.filter(o=>!parts.includes(o)&&['wall','glass','mirror','profile','accessory'].includes(o.kind)).flatMap(o=>doorBounds(o,frame));
+  for(const part of moving)for(const fixed of blockers){
+   if(part.min.y>=fixed.max.y||part.max.y<=fixed.min.y||part.min.z>=fixed.max.z||part.max.z<=fixed.min.z)continue;
+   const gap=direction>0?fixed.min.x-part.max.x:part.min.x-fixed.max.x;
+   if(gap>=-.1)limit=Math.min(limit,Math.max(0,gap-clearance));
+  }
+  slideLimits.set(panel.id,limit);
+ }
+}
+function showerHingePivot(panel,side){
+ const [x,y,z]=panelVector(panel,side*panel.w/2,0,panel.d/2+5);
+ return new (T().Vector3)(panel.x+x,panel.y+y,panel.z+z);
+}
+function addShowerHinges(panel,side,group){
+ const Three=T(),plates=[];
+ const finish=new Three.MeshStandardMaterial({color:0x68777b,metalness:.88,roughness:.25});
+ const o=showerHingePivot(panel,side);
+ const returnGlass=glassPanels().some(other=>{
+  if(other.id===panel.id||other.curve)return false;
+  const perpendicular=Math.abs(Math.sin((N(other.ry)-N(panel.ry))*Math.PI/180))>.95;
+  if(!perpendicular)return false;
+  const [x,,z]=panelVector(other,o.x-other.x,0,o.z-other.z,true);
+  return Math.abs(z)<25&&Math.abs(x)<other.w/2+28;
+ });
+ for(const y of [-panel.h*.34,panel.h*.34]){
+  const hinge=new Three.Group();
+  const [dx,dy,dz]=panelVector(panel,0,y,0);
+  hinge.position.set(o.x+dx,o.y+dy,o.z+dz);
+  hinge.rotation.set(...['rx','ry','rz'].map(key=>Three.MathUtils.degToRad(N(panel[key]))));
+  const box=(w,h,d,x,z)=>{
+   const part=new Three.Mesh(new Three.BoxGeometry(w,h,d),finish);
+   part.position.set(x,0,z);part.castShadow=true;hinge.add(part);return part;
+  };
+  const fixed=returnGlass?box(31,52,8,side*6,-17):box(25,52,10,side*17,-3);
+  if(returnGlass)fixed.rotation.y=Math.PI/2;
+  const mobile=box(31,52,8,-side*20,-3);
+  const pin=new Three.Mesh(new Three.CylinderGeometry(6,6,60,20),finish);
+  hinge.add(pin);
+  plates.push({hinge,mobile,x:mobile.position.x,z:mobile.position.z});
+  group.add(hinge);
+ }
+ hingePlates.set(panel.id,plates);
+}
+function drawScene(){
+ if(!V?.studio)return;
+ const group=V.group;
+ disposeModel(group);
+ hingePlates.clear();
+ const objects=model().objects;
+ for(const o of objects){
+  if(o.technicalSpec)linkedAccessoryPosition(o);
+  const mesh=createMesh(o);
+  mesh.position.z+=closedTrackOffset(o);
+  group.add(mesh);renderMeshes.set(o.id,mesh);
+  if(o.technicalId)loadTechnicalGLB(o,mesh);
+ }
+ if(model().studio.category==='doccia'){
+  for(const panel of glassPanels()){
+   const opening=doorOpening(panel);
+   if(opening?.type==='swing'&&!objects.some(o=>o.attachTo===panel.id&&o.accessoryType==='cerniera'))
+    addShowerHinges(panel,opening.side,group);
+  }
+ }
+ updateSlideLimits();
+ highlight();
+}
 function doorOpening(panel){
  if(panel.kind!=='glass')return null;
  if(panel.openingType==='fixed')return null;
@@ -637,21 +766,24 @@ function previewDoors(dt){
   const position=new Three.Vector3(panel.x,panel.y,panel.z);
   const angle=new Three.Euler(...['rx','ry','rz'].map(key=>Three.MathUtils.degToRad(N(panel[key]))));
   const side=new Three.Vector3(1,0,0).applyEuler(angle);
-  const pivot=position.clone().addScaledVector(side,opening.side*panel.w/2);
+  const pivot=hingePlates.has(id)?showerHingePivot(panel,opening.side):position.clone().addScaledVector(side,opening.side*panel.w/2);
   const rotation=new Three.Quaternion().setFromAxisAngle(new Three.Vector3(0,1,0).applyEuler(angle),opening.side*progress*Math.PI*.43);
-  const template=model().studio.template;
-  const legacySlide=opening.type==='slide'&&!panel.openingType&&['D02','D04'].includes(template);
-  const shift=side.clone().multiplyScalar((legacySlide?-1:opening.side)*(panel.slideTravel??panel.w*.92)*progress);
+  const shift=side.clone().multiplyScalar(slideDirection(panel,opening)*(slideLimits.get(id)??panel.slideTravel??panel.w*.92)*progress);
+  const hingeAngle=opening.side*progress*Math.PI*.43;
+  for(const {mobile,x,z} of hingePlates.get(id)||[]){
+   mobile.position.set(x*Math.cos(hingeAngle)+z*Math.sin(hingeAngle),0,-x*Math.sin(hingeAngle)+z*Math.cos(hingeAngle));
+   mobile.rotation.y=hingeAngle;
+  }
   if(opening.type==='curve'){
    pivot.set(panel.curve.x,panel.y,panel.curve.z);
-   rotation.setFromAxisAngle(new Three.Vector3(0,1,0),-opening.side*progress*Three.MathUtils.degToRad(panel.curve.end-panel.curve.start-1));
+   rotation.setFromAxisAngle(new Three.Vector3(0,1,0),-opening.side*progress*Three.MathUtils.degToRad(slideLimits.get(id)??panel.curve.end-panel.curve.start-1));
   }
   const partner=opening.type==='fold'?objects.find(o=>o.id===panel.foldPartner):null;
   const foldRotation=new Three.Quaternion().setFromAxisAngle(new Three.Vector3(0,1,0).applyEuler(angle),-opening.side*progress*Math.PI*.43);
   const joint=pivot.clone().addScaledVector(side,panel.foldSpan||0);
   const foldedJoint=joint.clone().sub(pivot).applyQuaternion(rotation).add(pivot);
   for(const o of objects){
-   const oldShowerHandle=['D02','D03','D04','D05'].includes(template)&&o.kind==='accessory'&&o.name==='Maniglia'&&!o.attachTo&&Math.abs(o.x-panel.x)<panel.w/2;
+   const oldShowerHandle=legacyHandle(o,panel);
    const secondary=partner&&(o.id===partner.id||o.attachTo===partner.id);
    if(o.id!==id&&o.attachTo!==id&&!oldShowerHandle&&!secondary)continue;
    const mesh=renderMeshes.get(o.id);
@@ -694,6 +826,7 @@ function frameModel(){
 }
 function disposeStudio(){
  doorPreviews.clear();
+ hingePlates.clear();slideLimits.clear();
  if(!V?.studio)return;
  disposeModel(V.group);
  V.environment.dispose();
