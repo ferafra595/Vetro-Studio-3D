@@ -41,7 +41,7 @@ function runStairs(c){
    for(let i=0;i<count;i++){
      const center=along(start,dir,(i+.5)*tread),top=(baseSteps+i+1)*rise;
      const horizontal=Math.abs(dir.x)>.5;
-     push(a,'stair',name+' · gradino '+(i+1),center.x,top-24,center.z,horizontal?tread-5:width,48,horizontal?width:tread-5,{finish,group:name});
+     push(a,'stair',name+' · gradino '+(i+1),center.x,top-24,center.z,horizontal?tread-5:width,48,horizontal?width:tread-5,{finish,group:name,beveled:true,treadDirection:[dir.x,dir.z]});
      push(a,'wall',name+' · alzata '+(i+1),center.x,top/2-26,center.z,horizontal?tread-8:width,Math.max(12,top-52),horizontal?width:tread-8,{finish:'concrete',group:name});
    }
    flights.push({name,start,end:along(start,dir,total),dir,perp,total,startHeight:baseSteps*rise,endHeight:(baseSteps+count)*rise});
@@ -51,7 +51,7 @@ function runStairs(c){
  if(layout==='straight'){landing={x:joint.x+550,z:0,w:1100,d:width};}
  if(layout==='L'){landing={x:joint.x+landingSize/2,z:-landingSize/2+half,w:landingSize,d:landingSize};let secondStart=pt(joint.x+landingSize/2,joint.z-landingSize+half);flight('Rampa 2',secondStart,pt(0,-1),second,first);}
  if(layout==='U'){landing={x:joint.x+landingSize/2,z:-half-110,w:landingSize,d:width*2+220};let secondStart=pt(joint.x,joint.z-width-220);flight('Rampa 2',secondStart,pt(-1,0),second,first);}
- push(a,'floor','Pianerottolo',landing.x,level-65,landing.z,landing.w,130,landing.d,{finish,group:'Pianerottolo'});
+ push(a,'floor','Pianerottolo',landing.x,level-65,landing.z,landing.w,130,landing.d,{finish,group:'Pianerottolo',beveled:true});
  function paneLine(name,p0,p1,y0,y1,offsetSign=1){
    const dx=p1.x-p0.x,dz=p1.z-p0.z,L=Math.hypot(dx,dz);if(L<120)return;
    const dir=pt(dx/L,dz/L),normal=pt(-dir.z,dir.x),xoff=(width/2+glassT/2+45)*offsetSign;
@@ -69,12 +69,12 @@ function runStairs(c){
          push(a,'accessory',(fix==='borchie'?'Borchia':'Morsetto')+' · '+name,q.x+normal.x*25,cy,q.z+normal.z*25,52,52,28,{accessoryType:fix==='borchie'?'borchia':'morsetto',attachTo:glass.id,ry:rot,group:name});
        }
      }
-     if(fix==='profilo')push(a,'profile','Profilo base · '+name,mid.x,(b0+b1)/2-14,mid.z,pW,32,36,{ry:rot,rz:Math.atan2(b1-b0,pW)*180/Math.PI,group:name});
+     if(fix==='profilo')push(a,'profile','Profilo base · '+name,mid.x,(b0+b1)/2-14,mid.z,pW,32,36,{profileRole:'shoe',ry:rot,rz:Math.atan2(b1-b0,pW)*180/Math.PI,group:name});
      if(c.handrail)push(a,'profile','Corrimano · '+name,mid.x,(b0+b1)/2+railH+18,mid.z,pW+gap,38,38,{ry:rot,rz:Math.atan2(b1-b0,pW)*180/Math.PI,group:name});
    }
    if(fix==='montanti')for(let i=0;i<=count;i++){
      const q=along(start,dir,L*i/count),h=y0+(y1-y0)*i/count;
-     push(a,'profile','Montante '+name+' '+(i+1),q.x,h+railH/2,q.z,42,railH,42,{group:name});
+     push(a,'profile','Montante '+name+' '+(i+1),q.x,h+railH/2,q.z,42,railH,42,{group:name,profileRole:'post'});
    }
  }
  const sides=c.side==='both'?[1,-1]:[c.side==='left'?-1:1];
@@ -101,8 +101,9 @@ function buildShower(add,[code,,layout,mechanism,width=1200,depth=900,returns]){
  const frontFrame={x:0,z:front,ry:0,length:width};
  const rightFrame={x:width/2,z:0,ry:90,length:depth};
  const addWall=(name,x,z,w,d)=>add('wall',name,x,wallHeight/2,z,w,wallHeight,d,{finish:'tile'});
- add('floor','Piatto doccia',0,-35,0,width,70,depth,{finish:'ceramic',trayRadius:curved?width:null});
- addWall('Parete posteriore',0,-front-wall/2,width+2*wall,wall);
+ add('floor','Piatto doccia',0,-35,0,width,70,depth,{finish:'ceramic',beveled:!curved,trayRadius:curved?width:null,drainDetail:true});
+ const back=addWall('Parete posteriore',0,-front-wall/2,width+2*wall,wall);
+ back.showerFixture=true;
  if(sideGlass===2||(corner&&sideGlass))add('glass','Parete fissa sinistra',-width/2,h/2,0,depth,h,glass,{ry:90});
  else addWall('Parete sinistra',-width/2-wall/2,0,wall,depth);
  if(sideGlass>=1&&!corner)add('glass','Parete fissa destra',width/2,h/2,0,depth,h,glass,{ry:90});
@@ -119,6 +120,8 @@ function buildShower(add,[code,,layout,mechanism,width=1200,depth=900,returns]){
  function rail(frame){
   const [x,,z]=panelVector(frame,0,0,-7);
   add('profile','Binario superiore',frame.x+x,h+16,frame.z+z,frame.length,32,45,{ry:frame.ry});
+  const [bx,,bz]=panelVector(frame,0,0,-5);
+  add('profile','Guida inferiore',frame.x+bx,2,frame.z+bz,frame.length,4,28,{ry:frame.ry,profileRole:'shoe'});
  }
  function sliding(frame,direction,double=false){
   const segment=frame.length/(double?4:2);
@@ -127,9 +130,19 @@ function buildShower(add,[code,,layout,mechanism,width=1200,depth=900,returns]){
   const leaf=panel(frame,'Anta scorrevole '+(direction<0?'sinistra':'destra'),direction*(frame.length/2-1.5*segment),segment+8,-14,
    {openingType:'slide',openingSide:direction,slideTravel:travel,interiorTrack:true});
   handle(leaf,-direction*(segment/2-65));
+  for(const fraction of [-.3,.3]){
+   const [x,,z]=panelVector(leaf,leaf.w*fraction,0,0);
+   add('accessory','Carrello doccia',leaf.x+x,h-3,leaf.z+z,24,19,15,
+    {ry:leaf.ry,accessoryType:'roller',attachTo:leaf.id,visualDetail:true});
+  }
  }
  if(curved){
   const radius=width;
+  const midpoint=radius/Math.sqrt(2);
+  for(const [name,y,section] of [['Binario curvo',h+14,28],['Guida curva inferiore',2,4]]){
+   add('profile',name,-width/2+midpoint,y,-front+midpoint,radius*Math.PI/2,section,32,
+    {curve:{x:-width/2,z:-front,radius:radius-7,start:0,end:90},profileRole:'curvedRail'});
+  }
   for(const [i,[start,end]] of [[0,22.5],[22.5,45],[45,67.5],[67.5,90]].entries()){
    const moving=i===1||i===2,arcRadius=radius-(moving?14:0),mid=(start+end)*Math.PI/360;
    const x=-width/2+arcRadius*Math.cos(mid),z=-front+arcRadius*Math.sin(mid);
@@ -150,9 +163,13 @@ function buildShower(add,[code,,layout,mechanism,width=1200,depth=900,returns]){
   const root=panel(frontFrame,'Anta pieghevole · lato muro',-width/4,width/2-4,0,{openingType:'fold',openingSide:-1,foldSpan:width/2});
   const leaf=panel(frontFrame,'Anta pieghevole · lato maniglia',width/4,width/2-4,0,{foldRoot:root.id});
   root.foldPartner=leaf.id;
+  for(const y of [340,h-340])add('accessory','Cerniera centrale',0,y,front+7,34,54,14,{accessoryType:'foldJoint',attachTo:root.id,visualDetail:true});
   handle(leaf,width/4-70);
  }else if(layout==='walkin'){
-  panel(frontFrame,'Vetro walk-in',-width/6,width*2/3);
+  const pane=panel(frontFrame,'Vetro walk-in',-width/6,width*2/3);
+  add('profile','Profilo base walk-in',pane.x,7,pane.z,pane.w,14,24,{profileRole:'shoe'});
+  add('profile','Profilo a parete',-width/2+9,h/2,front,20,h,29,{profileRole:'jamb'});
+  add('profile','Tirante a parete',pane.x+pane.w*.35,h-45,0,depth,17,17,{ry:90,profileRole:'brace'});
  }else{
   const paired=layout==='doppia';
   const length=paired||layout==='angolo'?width/2:width;
@@ -172,10 +189,10 @@ function buildInteriorDoor(add,kind,fix){
  const surroundDepth=sliding?width/count+80:310;
  for(const side of [-1,1]){
   add('wall',side<0?'Spalletta sinistra':'Spalletta destra',side*(width+surroundDepth)/2,(height+300)/2,frameZ,surroundDepth,height+300,wallDepth,{finish:'concrete'});
-  add('profile',side<0?'Stipite sinistro':'Stipite destro',side*(width/2+14),height/2,frameZ,30,height,72);
+  add('profile',side<0?'Stipite sinistro':'Stipite destro',side*(width/2+14),height/2,frameZ,30,height,72,{profileRole:'jamb'});
  }
  add('wall','Architrave',0,height+150,frameZ,width,300,wallDepth,{finish:'concrete'});
- add('profile','Traverso superiore',0,height+10,frameZ,width,22,72);
+ add('profile','Traverso superiore',0,height+10,frameZ,width,22,72,{profileRole:'header'});
  if(sliding){
   const trackLength=width*2+32;
   const trackX=paired?0:-width/2;
@@ -205,7 +222,43 @@ function buildInteriorDoor(add,kind,fix){
   root.foldSpan=panelWidth;
   root.foldPartner=leaf.id;
   leaf.foldRoot=root.id;
+  for(const y of [375,height-375])add('accessory','Cerniera centrale',0,y,panelZ+8,34,54,14,{accessoryType:'foldJoint',attachTo:root.id,visualDetail:true});
  }
+}
+function buildBalustrade(add,kind,fix){
+ const width=3040,depth=980,height=1100,edge=depth/2,count=4;
+ add('floor','Soletta in calcestruzzo',0,-137,-12,width+90,216,depth-24,{finish:'concrete'});
+ add('floor','Fascia in pietra',0,-126,edge-14,width+90,230,28,{finish:'limestone',beveled:true});
+ add('floor','Copertina in pietra',0,-24,0,width+108,27,depth+28,{finish:'limestone',beveled:true});
+ for(let i=0;i<8;i++)add('floor','Listone '+(i+1),0,-7,-depth/2+25+(i+.5)*116,width+22,14,111,{finish:'deckWood',beveled:true});
+ const buildRun=(frame,n,span)=>{
+  const step=span/n;
+  const place=(kind,name,along,y,normal,w,h,d,extra={})=>{
+   const [dx,,dz]=panelVector(frame,along,0,normal);
+   return add(kind,name,frame.x+dx,y,frame.z+dz,w,h,d,{ry:frame.ry,...extra});
+  };
+  const fascia=fix==='borchie',shoe=fix==='profilo',post=fix==='montanti'||fix==='morsetti';
+  const glassBottom=fascia?-195:shoe?8:20;
+  const glassTop=height-24;
+  for(let i=0;i<n;i++){
+   const x=step*(i+.5)-span/2;
+   const pane=place('glass','Vetro '+frame.label+' '+(i+1),x,(glassTop+glassBottom)/2,fascia?28:0,step-(post?48:12),glassTop-glassBottom,12);
+   if(fascia)for(const offset of [-.3,.3])for(const y of [-161,-60]){
+    place('accessory','Borchia frontale',x+offset*step,y,35,48,48,36,{accessoryType:'borchia',attachTo:pane.id,standOff:38});
+   }
+   if(fix==='morsetti')for(const side of [-1,1])for(const y of [150,850]){
+    place('accessory','Morsetto laterale',x+side*(pane.w/2-19),y,0,38,48,26,{accessoryType:'morsetto',attachTo:pane.id});
+   }
+  }
+  if(shoe)place('profile','Profilo base continuo',0,31,0,span,62,56,{profileRole:'shoe',metalFinish:'satin'});
+  if(post)for(let i=0;i<=n;i++){
+   if(i===0&&frame.sharedCorner)continue;
+   place('profile','Montante con piastra '+(i+1),step*i-span/2,glassTop/2,0,38,glassTop,46,{profileRole:'post',metalFinish:'satin'});
+  }
+  place('profile','Corrimano',0,height-8,fascia?28:0,span+16,32,42,{metalFinish:'satin'});
+ };
+ buildRun({x:0,z:edge,ry:0,label:'frontale'},count,width);
+ if(kind==='corner')buildRun({x:width/2,z:edge-depth*.5,ry:90,label:'laterale',sharedCorner:true},2,depth);
 }
 function buildFasciaBalustrade(add){
  const width=2460,depth=960,edge=depth/2,deck=270,glassThickness=12,paneDepth=edge+31,paneHeight=1330;
@@ -227,7 +280,7 @@ function buildStorefront(add,kind,count){
  const width=3600,height=2450,sideDepth=1050;
  const base=kind==='angolo'?sideDepth:180;
  add('floor','Soglia in pietra',0,-32,-base/2,width+180,64,base+170,{finish:'limestone',beveled:true});
- function framing(frame,panelCount,doorIndex=-1){
+ function framing(frame,panelCount,doorIndex=-1,sharedCorner=false){
   const {x,z,ry,length}=frame,paneWidth=length/panelCount;
   const place=(kind,name,along,y,normal,w,h,d,props={})=>{
    const [dx,,dz]=panelVector(frame,along,0,normal);
@@ -239,17 +292,17 @@ function buildStorefront(add,kind,count){
     {openingType:door?'swing':'fixed',openingSide:-1});
    if(door)place('accessory','Maniglia ingresso',along+paneWidth*.34,1050,0,25,220,35,{accessoryType:'maniglia',attachTo:panel.id});
   }
-  for(let i=0;i<=panelCount;i++)place('profile','Montante '+(i+1),-length/2+paneWidth*i,height/2,0,30,height,54,{metalFinish:'black'});
-  place('profile','Traverso superiore',0,height-10,0,length+30,32,52,{metalFinish:'black'});
-  place('profile','Profilo base',0,10,0,length+30,24,48,{metalFinish:'black'});
+  for(let i=sharedCorner?1:0;i<=panelCount;i++)place('profile','Montante '+(i+1),-length/2+paneWidth*i,height/2,0,30,height,54,{metalFinish:'black',profileRole:'glazingPost'});
+  place('profile','Traverso superiore',0,height-10,0,length+30,32,52,{metalFinish:'black',profileRole:'header'});
+  place('profile','Profilo base',0,10,0,length+30,24,48,{metalFinish:'black',profileRole:'shoe'});
  }
  framing({x:0,z:0,ry:0,length:width},count,kind==='ingresso'?1:-1);
- if(kind==='angolo')framing({x:width/2,z:-sideDepth/2,ry:90,length:sideDepth},1);
+ if(kind==='angolo')framing({x:width/2,z:-sideDepth/2,ry:90,length:sideDepth},1,-1,true);
 }
 function buildMirror(add,kind){
  const width=1100,height=kind==='circolare'?width:1700;
  add('wall','Parete rivestita',0,1050,-64,2200,2100,96,{finish:'limestone',beveled:true});
- const mirror=add('mirror','Specchio',0,1050,0,width,height,6);
+ const mirror=add('mirror','Specchio',0,1050,0,width,height,6,{mirrorDetail:true});
  if(kind==='rettangolare')return;
  const r=width/2,b=Math.tan(Math.PI/8);
  const points=kind==='arco'?[[0,0],[width,0],[width,height-r],[0,height-r]]:[[r,0],[width,r],[r,height],[0,r]];
@@ -261,7 +314,7 @@ function build(cat,t){const a=[],code=t[0],kind=t[2],fix=t[3],cfg={category:cat,
  const add=(k,n,x,y,z,w,h,d,o={})=>push(a,k,n,x,y,z,w,h,d,o);
  if(cat==='scala')return {objects:runStairs(cfg.settings),studio:cfg};
  if(cat==='parapetto'&&kind==='fascia')buildFasciaBalustrade(add);
- else if(cat==='parapetto'){const w=3600,h=1050,d=1200,n=4;add('floor','Soletta rivestita',0,-70,0,w+200,140,d,{finish:'stone'});for(let i=0;i<n;i++){let x=-w/2+w*(i+.5)/n;let panel=add('glass','Vetro parapetto '+(i+1),x,h/2,d/2,w/n-12,h,12,{group:'Parapetto'});if(fix==='montanti')add('profile','Montante '+(i+1),x-w/n/2,h/2,d/2,42,h,42);else if(fix==='borchie')for(let k of [-.28,.28])add('accessory','Borchia',x+k*w/n,140,d/2+28,50,50,28,{accessoryType:'borchia',attachTo:panel.id})}add('profile','Corrimano',0,h+20,d/2,w,35,35);if(kind==='corner')add('glass','Ritorno angolare',w/2,h/2,0,1000,h,12,{ry:90})}
+ else if(cat==='parapetto')buildBalustrade(add,kind,fix);
  if(cat==='doccia')buildShower(add,t);
  if(cat==='porta')buildInteriorDoor(add,kind,fix);
  if(cat==='vetrina')buildStorefront(add,kind,N(fix,3));
@@ -387,7 +440,7 @@ function saveState(state,signature){
  for(const id of ['vsSaveState','cadSaveState']){const el=$id(id);if(el)el.textContent=label;}
 }
 function updateTitle(){saveState();let el=$id('vsTitle');if(el)el.textContent=S.current?.title||'Nuovo progetto'}
-function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),material=area*180,accessories=m.objects.filter(o=>o.kind==='accessory').reduce((sum,o)=>sum+N(o.technicalUnitPrice,35),0),cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
+function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),material=area*180,accessories=m.objects.filter(o=>o.kind==='accessory'&&!o.visualDetail).reduce((sum,o)=>sum+N(o.technicalUnitPrice,35),0),cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
 function updatePricing(){let el=$id('vsQuote');if(!el)return;let p=pricingModel();el.innerHTML=`<div class="vsMetric">Vetro <b>${p.area.toFixed(2)} m²</b></div><div class="vsMetric">Materiali <b>${eur(p.material)}</b></div><div class="vsMetric">Accessori <b>${eur(p.accessories)}</b></div><div class="vsMetric">Imponibile <b>${eur(p.net)}</b></div><div class="vsMetric">Totale IVA inclusa <strong>${eur(p.total)}</strong></div><p class="small">Prezzi indicativi: da configurare nei listini della vetreria.</p>`}
 let activeProject;
 function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';if(activeProject!==S.current){activeProject=S.current;viewMode='studio';resetPresentation();savedProjectState=S.current.id?projectSignature():null;savingProject=false;saveFailed=false;U.undo=[];U.redo=[];U.selected=null}}
@@ -759,7 +812,7 @@ function profileMesh(Three,o){
  const name=String(o.name||'');
  const upperRail=/binario|guida superiore/i.test(name);
  const handrail=/corrimano/i.test(name);
- const base=/profilo base/i.test(name);
+ const base=/profilo base/i.test(name)||o.profileRole==='shoe';
  if(upperRail||base){
   const side=Math.min(4,d/7,h/5),cap=Math.min(2,w/12),sign=upperRail?1:-1;
   add('Anima del profilo',w,side,d,0,sign*(h-side)/2,0,.9);
@@ -768,6 +821,38 @@ function profileMesh(Three,o){
    if(w>20)add('Battuta interna',w-cap*2,Math.min(2,h/8),side,0,-sign*(h/2-side),z*(d-3*side)/2,.45,inset);
   }
   if(w>20)for(const x of [-1,1])add('Terminale',cap,h,d,x*(w-cap)/2,0,0,1.4,polymer);
+ }else if(o.profileRole==='post'||o.profileRole==='glazingPost'){
+  add('Corpo montante',w,h,d,0,0,0,1.6);
+  if(o.profileRole==='post'){
+   const baseW=w+36,baseD=d+32,y=-h/2+3;
+   add('Piastra di fissaggio',baseW,6,baseD,0,y,0,1.2);
+   for(const x of [-1,1])for(const z of [-1,1]){
+    const bolt=new Three.Mesh(new Three.CylinderGeometry(4.1,4.8,3,6),metal);
+    bolt.position.set(x*(baseW/2-10),y+4.5,z*(baseD/2-10));
+    bolt.name='Testa vite';bolt.userData.studioId=o.id;bolt.castShadow=true;
+    group.add(bolt);
+   }
+  }else{
+   for(const side of [-1,1]){
+    add('Fermavetro',5,h-12,11,side*(w/2-2),0,d/2-7,1.1);
+    add('Guarnizione verticale',2,h-20,4,side*(w/2+.3),0,d/2-11,.45,polymer);
+   }
+  }
+ }else if(o.profileRole==='jamb'||o.profileRole==='header'){
+  add('Corpo telaio',w,h,d,0,0,0,1.3);
+  if(o.profileRole==='jamb'){
+   add('Battuta verticale',Math.min(6,w/3),h-8,7,-w*.17,0,d/2-5,.7);
+   add('Guarnizione verticale',2,h-8,3,-w*.17,0,d/2-1,.4,polymer);
+  }else{
+   add('Battuta traverso',w-8,Math.min(6,h/3),7,0,-h*.2,d/2-5,.8);
+   add('Guarnizione traverso',w-8,2,3,0,-h*.2,d/2-1,.4,polymer);
+  }
+ }else if(o.profileRole==='brace'){
+  const tube=new Three.Mesh(new Three.CylinderGeometry(h/2,h/2,w,28),metal);
+  tube.rotation.z=Math.PI/2;
+  tube.name='Tubo tirante';tube.userData.studioId=o.id;tube.castShadow=true;
+  group.add(tube);unused.delete(metal);
+  for(const dir of [-1,1])add('Attacco tirante',12,h+8,d+8,dir*(w/2-6),0,0,2);
  }else if(handrail){
   const radius=Math.min(h,d)*.32;
   add('Impugnatura',w,h,d,0,0,0,radius);
@@ -809,7 +894,12 @@ function beveledFinishGeometry(Three,o){
 }
 function createMesh(o){
  const Three=T();
- if(o.kind==='profile')return profileMesh(Three,o);
+ if(o.kind==='profile'){
+  if(!o.curve)return profileMesh(Three,o);
+  const rail=new Three.Mesh(curvedShowerGeometry(Three,o),hardwareMaterial(Three,o));
+  rail.position.set(o.x,o.y,o.z);rail.castShadow=true;rail.receiveShadow=true;rail.userData.studioId=o.id;
+  return rail;
+ }
  const glass=['glass','mirror'].includes(o.kind),building=['wall','floor','stair','balcony'].includes(o.kind);let geo;
  if(o.curve||o.trayRadius)geo=curvedShowerGeometry(Three,o);
  else if(glass&&o.shape?.length>=3){
@@ -881,12 +971,55 @@ function createMesh(o){
   mesh.add(edges);
  }
  if(o.kind==='floor'&&o.name==='Piatto doccia'){
-  const drain=new Three.Mesh(new Three.CylinderGeometry(34,34,2,32),new Three.MeshStandardMaterial({color:0x798083,metalness:.83,roughness:.34}));
+  const steel=hardwareMaterial(Three,{metalFinish:'satin'});
+  const drain=new Three.Mesh(new Three.CylinderGeometry(34,34,2,38),steel);
   drain.position.set(0,o.h/2+1,-o.d*.3);
   mesh.add(drain);
+  if(o.drainDetail){
+   const socket=new Three.MeshStandardMaterial({color:0x2b3237,roughness:.8});
+   for(const x of [-14,-7,0,7,14]){
+    const slot=new Three.Mesh(new Three.BoxGeometry(2,.45,30-12*Math.abs(x)/14),socket);
+    slot.position.set(x,o.h/2+2.22,-o.d*.3);mesh.add(slot);
+   }
+  }
+ }
+ if(o.showerFixture){
+  const metal=hardwareMaterial(Three,{metalFinish:'chrome'}),surface=o.d/2;
+  const pipe=(r,length,x,y,z)=>{
+   const part=new Three.Mesh(new Three.CylinderGeometry(r,r,length,24),metal);
+   part.position.set(x,y,z);part.castShadow=true;part.receiveShadow=true;mesh.add(part);return part;
+  };
+  const x=-o.w*.15,lower=1020-o.h/2,upper=2050-o.h/2;
+  pipe(10,upper-lower,x,(upper+lower)/2,surface+56);
+  pipe(13,94,x,upper,surface+101).rotation.x=Math.PI/2;
+  pipe(88,10,x,upper-20,surface+154);
+  pipe(13,52,x,upper-3,surface+154);
+  const spray=new Three.Mesh(new Three.CylinderGeometry(81,81,2,42),new Three.MeshStandardMaterial({color:0x3a3f43,roughness:.58}));
+  spray.position.set(x,upper-25.2,surface+154);mesh.add(spray);
+  for(const y of [lower,upper-180])pipe(21,16,x,y,surface+8).rotation.x=Math.PI/2;
+  pipe(28,48,x,lower,surface+31).rotation.x=Math.PI/2;
  }
  if(o.kind==='stair'){
-   const nose=new Three.Mesh(new Three.BoxGeometry(Math.max(20,o.w),7,9),new Three.MeshStandardMaterial({color:0x8a7766,roughness:.5}));nose.position.set(0,o.h/2-7,o.d/2-9);mesh.add(nose);
+   const [dx,dz]=o.treadDirection||[0,-1];
+   const alongX=Math.abs(dx)>.5;
+   const nose=new Three.Mesh(roundedSection(Three,alongX?o.d-8:o.w-8,8,12,2),
+    new Three.MeshStandardMaterial({color:0x927758,roughness:.54}));
+   if(alongX)nose.rotation.y=Math.PI/2;
+   nose.position.set(-dx*(o.w/2-4),o.h/2-6,-dz*(o.d/2-4));
+   mesh.add(nose);
+ }
+ if(o.mirrorDetail){
+  const back=new Three.Mesh(geo.clone(),new Three.MeshStandardMaterial({color:0x2d3439,roughness:.56}));
+  back.geometry.clearGroups();
+  back.scale.set(.977,.983,.37);
+  back.position.z=-o.d*.63;
+  mesh.add(back);
+  const metal=hardwareMaterial(Three,{metalFinish:'satin'});
+  for(const x of [-.27,.27])for(const y of [-.25,.25]){
+   const mount=new Three.Mesh(new Three.CylinderGeometry(16,16,12,24),metal);
+   mount.rotation.x=Math.PI/2;mount.position.set(x*o.w,y*o.h,-o.d/2-8);
+   mesh.add(mount);
+  }
  }
  if(o.kind==='accessory'){
    let usesBox=false;
@@ -947,6 +1080,10 @@ function createMesh(o){
        add(new Three.CylinderGeometry(12,12,5,20),0,y,-7).rotation.x=Math.PI/2;
       }
      }
+   }else if(type==='foldJoint'){
+     add(roundedSection(Three,14,48,7,1.2),-11,0,0);
+     add(roundedSection(Three,14,48,7,1.2),11,0,0);
+     add(new Three.CylinderGeometry(4.5,4.5,55,20),0,0,4);
    }else if(type==='roller'){
      add(new Three.BoxGeometry(26,22,18),0,0,0);
      const wheel=add(new Three.CylinderGeometry(8,8,12,16),0,14,0);
@@ -1328,7 +1465,7 @@ function drawScene(){
  if(['doccia','porta','vetrina'].includes(model().studio.category)){
   for(const panel of glassPanels()){
    const opening=doorOpening(panel);
-   if(opening?.type==='swing'&&!objects.some(o=>o.attachTo===panel.id&&o.accessoryType==='cerniera'))
+   if(['swing','fold'].includes(opening?.type)&&!objects.some(o=>o.attachTo===panel.id&&o.accessoryType==='cerniera'))
     addDoorHinges(panel,opening.side,group);
   }
  }
