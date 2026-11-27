@@ -334,13 +334,13 @@ function makeSurfaceTexture(Three,finish){
 function technicalHoles(o,excludedId=null,pending=[]){
  const result=(o.holes||[]).map(h=>({...h}));
  if(o.kind!=='glass'&&o.kind!=='mirror')return result;
- for(const a of [...model().objects,...pending]){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||a.id===excludedId)continue;
+ for(const a of [...model().objects,...pending]){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||(excludedId instanceof Set?excludedId.has(a.id):a.id===excludedId))continue;
   for(const h of a.technicalSpec.holes||[])result.push({type:'circle',x:mm(a.localX+N(h.x)),y:mm(a.localY+N(h.y)),r:N(h.r),technicalInstanceId:a.id});
  }
  return result;
 }
 function technicalCutouts(o,excludedId=null,pending=[]){const result=[];
- for(const a of [...model().objects,...pending]){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||a.id===excludedId)continue;
+ for(const a of [...model().objects,...pending]){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||(excludedId instanceof Set?excludedId.has(a.id):a.id===excludedId))continue;
   for(const poly of a.technicalSpec.cutouts||[])result.push(poly.map(p=>[mm(a.localX+N(p[0])),mm(a.localY+N(p[1]))]));
  }return result;
 }
@@ -405,14 +405,14 @@ function technicalPatternValid(owner,spec,x,y,excludedId=null,pending=[]){
  // The boolean engine rejects disconnected pieces. The CAD 2D and 3D render from this same derived outline.
  return null;
 }
-function technicalPlacement(item,x,y,pending=[]){
+function technicalPlacement(item,x,y,pending=[],excluded=null){
  const owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
  if(!owner)return {ok:false,error:'Seleziona prima una lastra'};
  if(owner.curve)return {ok:false,error:'Le lavorazioni su vetro curvo richiedono una scheda dedicata'};
  if(item.status!=='approved')return {ok:false,error:'La scheda tecnica non è stata approvata'};
  if(owner.d<N(item.glass_min)||owner.d>N(item.glass_max))return {ok:false,error:'Spessore vetro non compatibile con la scheda accessorio'};
  const spec=item.cut_spec||{holes:[],cutouts:[]};
- const error=technicalPatternValid(owner,spec,x,y,null,pending);
+ const error=technicalPatternValid(owner,spec,x,y,excluded,pending);
  return error?{ok:false,error}:{ok:true,owner,spec};
 }
 function orientTechnicalItem(item,edge){
@@ -435,14 +435,17 @@ function orientHardware(T,edge,model){
 }
 function prepareTechnicalBatch(placements){
  const pending=[];
+ const excluded=new Set(placements.map(p=>p.existingId).filter(Boolean));
  if(!placements.length)return {ok:false,error:'Aggiungi almeno una posizione'};
- for(const [index,{item,x,y}] of placements.entries()){
-  const placement=technicalPlacement(item,x,y,pending);
+ for(const [index,{item,x,y,existingId}] of placements.entries()){
+  const placement=technicalPlacement(item,x,y,pending,excluded);
   if(!placement.ok)return {ok:false,error:'Accessorio '+(index+1)+' · '+placement.error};
   const {owner,spec}=placement;
-  if([...model().objects,...pending].some(o=>o.attachTo===owner.id&&o.technicalId===item.id&&Math.hypot(o.localX-x,o.localY-y)<.1))
+  const original=existingId?model().objects.find(o=>o.id===existingId&&o.attachTo===owner.id&&o.technicalId===item.id):null;
+  if(existingId&&(!original||pending.some(o=>o.existingId===existingId)))return {ok:false,error:'Accessorio da spostare non disponibile'};
+  if([...model().objects.filter(o=>!excluded.has(o.id)),...pending].some(o=>o.attachTo===owner.id&&o.technicalId===item.id&&Math.hypot(o.localX-x,o.localY-y)<.1))
    return {ok:false,error:'Accessorio '+(index+1)+' · già presente in questa posizione'};
-  pending.push({kind:'accessory',attachTo:owner.id,technicalId:item.id,technicalSpec:spec,localX:x,localY:y,item});
+  pending.push({kind:'accessory',attachTo:owner.id,technicalId:item.id,technicalSpec:spec,localX:x,localY:y,item,existingId});
  }
  return {ok:true,pending};
 }
@@ -450,16 +453,18 @@ function placeTechnicalBatch(placements){
  const result=prepareTechnicalBatch(placements);
  if(!result.ok)return result;
  remember();
- const added=result.pending.map(({item,kind,...position})=>{
-  const o=object(kind,item.name,0,0,0,50,65,35,{
+ const added=result.pending.map(({item,kind,existingId,...position})=>{
+  const data={
    ...position,accessoryType:item.category,technicalCode:item.code,
    technicalSpec:structuredClone(position.technicalSpec),technicalUpdatedAt:item.updated_at,mountEdge:item.mountEdge,
    technicalUnitPrice:Math.max(0,N(item.price))
-  });
+  };
+  const o=existingId?model().objects.find(o=>o.id===existingId):object(kind,item.name,0,0,0,50,65,35,data);
+  if(existingId)Object.assign(o,position,{technicalSpec:data.technicalSpec,mountEdge:item.mountEdge});
   linkedAccessoryPosition(o);
   return o;
  });
- model().objects.push(...added);
+ model().objects.push(...added.filter(o=>!model().objects.includes(o)));
  refresh(true);
  return {ok:true,id:added[0].id};
 }
@@ -557,6 +562,42 @@ function createMesh(o){
  return mesh;
 }
 const techGLBCache=new Map();
+function hardwareContact(mount,box){
+ const Three=T(),point=new Three.Vector3();
+ const tolerance=Math.min(2,Math.max(.2,(box.max.z-box.min.z)*.04));
+ mount.updateMatrixWorld(true);
+ const scan=visit=>mount.traverse(mesh=>{
+  const vertices=mesh.geometry?.attributes.position;
+  if(!vertices)return;
+  for(let i=0;i<vertices.count;i++){
+   point.fromBufferAttribute(vertices,i).applyMatrix4(mesh.matrixWorld);
+   if(point.z<=box.min.z+tolerance)visit(point);
+  }
+ });
+ const contact=new Three.Box3();
+ scan(p=>contact.expandByPoint(p));
+ if(contact.isEmpty())return box.getCenter(new Three.Vector3());
+ // In the canonical orientation the glass is on the +X side of edge hardware.
+ const midpoint=(contact.min.x+contact.max.x)/2;
+ contact.makeEmpty();
+ scan(p=>{if(p.x>=midpoint)contact.expandByPoint(p);});
+ return contact.getCenter(new Three.Vector3());
+}
+function glassContactOffset(o){
+ const owner=glassPanels().find(panel=>panel.id===o.attachTo);
+ const directions={left:[1,0],right:[-1,0],bottom:[0,1],top:[0,-1]};
+ const inward=directions[o.mountEdge];
+ if(!owner||!inward)return [0,0];
+ const {outline,voids}=technicalGlassShape(owner);
+ const inside=distance=>{
+  const p=[o.localX+inward[0]*distance,o.localY+inward[1]*distance];
+  return window.VSGeometry.pointInside(p,outline)&&!voids.some(poly=>window.VSGeometry.pointInside(p,poly));
+ };
+ for(let distance=0;distance<=Math.min(160,Math.max(owner.w,owner.h));distance++){
+  if(inside(distance)&&inside(distance+2))return inward.map(axis=>axis*(distance+2));
+ }
+ return [0,0];
+}
 async function loadTechnicalGLB(o,placeholder){
  if(!window.THREE?.GLTFLoader||!V?.studio||!o.technicalId)return;
  const key=o.technicalId;
@@ -576,10 +617,12 @@ async function loadTechnicalGLB(o,placeholder){
    mesh.castShadow=true;
    mesh.receiveShadow=true;
   });const box=new THREE.Box3().setFromObject(mount);
-  const center=box.getCenter(new THREE.Vector3());
+  const edgeMounted=['left','right','top','bottom'].includes(o.mountEdge);
+  const center=edgeMounted?hardwareContact(mount,box):box.getCenter(new THREE.Vector3());
   mount.position.set(-center.x,-center.y,-box.min.z);
   const oriented=orientHardware(THREE,o.mountEdge,mount);
-  oriented.position.set(N(o.mountX),N(o.mountY),N(o.mountZ));
+  const [dx,dy]=glassContactOffset(o);
+  oriented.position.set(dx+N(o.mountX),dy+N(o.mountY),N(o.mountZ));
   placeholder.traverse(mesh=>{mesh.geometry?.dispose();mesh.material?.dispose();});
   placeholder.clear();placeholder.add(oriented);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});updateSlideLimits();highlight();
  }catch(e){console.warn('GLB accessorio non disponibile:',e)}
@@ -1100,10 +1143,15 @@ function switchMode(){viewMode=viewMode==='real'?'technical':'real';$id('vsVisua
 function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='dxf-panel')exportDXF(U.selected??null);if(v==='workshop')exportWorkshopSheet();if(v==='gltf')downloadGLTF()}
 function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-vstab]').forEach(b=>b.classList.toggle('active',b.dataset.vstab===U.tab))}
 function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
-window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},orient:orientTechnicalItem,validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
+window.VSTechBridge={mounted(ownerId){
+ return model().objects.filter(o=>o.attachTo===ownerId&&o.technicalId&&o.technicalSpec).map(o=>({
+  existingId:o.id,x:o.localX,y:o.localY,item:{id:o.technicalId,name:o.name,code:o.technicalCode,category:o.accessoryType,
+   status:'approved',glass_min:0,glass_max:100,price:o.technicalUnitPrice,cut_spec:structuredClone(o.technicalSpec),mountEdge:o.mountEdge||'free'}
+ }));
+},selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},orient:orientTechnicalItem,validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
 window.VSCADBridge={
  panels:()=>glassPanels().map(({id,name})=>({id,name})),
- selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch}},
+ selected(excluded=null){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o,[],excluded);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o,excluded),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch}},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
  if(model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))return {ok:false,error:'Per modificare il profilo base rimuovi prima gli accessori tecnici; gli scassi sono calcolati automaticamente.'};
  const manualHoles=(holes||[]).filter(h=>!h.technicalInstanceId);const r=window.VSGeometry.normalize(outline,manualHoles);if(!r.ok)return r;
