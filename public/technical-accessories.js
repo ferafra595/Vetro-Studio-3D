@@ -249,20 +249,22 @@ function parseDXF(input){const raw=input.replace(/\r/g,'').split('\n'),pairs=[];
  const coords=[...holes.map(h=>[h.x,h.y]),...cutouts.flat()],cx=(Math.min(...coords.map(q=>q[0]))+Math.max(...coords.map(q=>q[0])))/2,cy=(Math.min(...coords.map(q=>q[1]))+Math.max(...coords.map(q=>q[1])))/2;
  return {holes:holes.map(h=>({...h,x:Math.round((h.x-cx)*100)/100,y:Math.round((h.y-cy)*100)/100})),cutouts:cutouts.map(poly=>poly.map(p=>[+(p[0]-cx).toFixed(2),+(p[1]-cy).toFixed(2)])),origin:[cx,cy],ignored};}
 async function extractDXF(){try{const r=await fetch('/api/technical-accessories/'+S.selected.id+'/files/dxf',{credentials:'same-origin'});if(!r.ok)throw Error('Carica prima un file DXF ASCII');const txt=await r.text();const result=parseDXF(txt);if(!confirm(`Riconosciuti ${result.holes.length} fori e ${result.cutouts.length} contorni chiusi. Entità ignorate: ${result.ignored.length}. Sostituire le lavorazioni attuali?`))return;S.cuts={holes:result.holes,cutouts:result.cutouts,origin:result.origin};detail();notify('Geometrie importate: verifica le quote e approva la scheda.')}catch(e){notify(e.message)}}
-let pickerItem=null;
+let pickerItem=null,pickerQueue=[],pickerOwnerId=null,pickerContext=null;
 function renderPicker(items){
- return `<div><h3>Posiziona accessorio</h3>
+ return `<div class="techPlacement"><h3>Posiziona accessorio</h3>
  <label class="label" for="pickTech">Accessorio approvato</label>
  <select class="field" id="pickTech" onchange="VSTech.updatePicker()">${items.map(t=>`<option value="${E(t.id)}">${E(t.code)} · ${E(t.name)}</option>`).join('')}</select>
  <div class="grid2"><label>X dal bordo sinistro (mm)<input class="field" type="number" step="any" id="pickX" oninput="VSTech.previewPlacement()"></label>
  <label>Y dal bordo inferiore (mm)<input class="field" type="number" step="any" id="pickY" oninput="VSTech.previewPlacement()"></label></div>
  <label class="small" id="pickSnapLabel" hidden><input id="pickSnap" type="checkbox" onchange="VSTech.previewPlacement()"> Aggancia lo scasso al bordo sinistro</label>
  <p class="small">Clicca sulla lastra per impostare la posizione oppure inserisci le quote.</p>
- <svg id="pickDrawing" width="100%" height="260" role="img" aria-label="Anteprima 2D della lastra e delle lavorazioni" onclick="VSTech.pickPoint(event)"></svg>
+ <svg id="pickDrawing" width="100%" height="190" role="img" aria-label="Anteprima 2D della lastra e delle lavorazioni" onclick="VSTech.pickPoint(event)"></svg>
  <p id="pickNotchHint" class="small" role="status" aria-live="polite"></p>
- <div class="actions"><button id="pickApply" class="btn primary" disabled onclick="VSTech.place()">Applica e mostra in 3D</button></div></div>`;
+ <div id="pickQueue"></div>
+ <div class="actions techPlacementActions"><button id="pickAdd" class="btn" disabled onclick="VSTech.queuePlacement()">Aggiungi alla lista</button>
+ <button id="pickApply" class="btn primary" disabled onclick="VSTech.place()">Applica accessori</button></div></div>`;
 }
-async function picker(beforeOpen){
+async function picker(beforeOpen,onDone){
  const owner=window.VSTechBridge?.selected();
  if(!owner)return notify('Seleziona prima una lastra');
  try{
@@ -272,6 +274,9 @@ async function picker(beforeOpen){
   if(!compatible.length)return notify('Nessun accessorio approvato compatibile con lo spessore della lastra');
   if(typeof beforeOpen==='function'&&beforeOpen()===false)return;
   pickerItem=null;
+  pickerQueue=[];
+  pickerOwnerId=owner.id;
+  pickerContext=onDone;
   openModal(renderPicker(compatible));
   $('pickX').value=Number((owner.w/2).toFixed(3));
   $('pickY').value=Number((owner.h/2).toFixed(3));
@@ -295,16 +300,17 @@ async function updatePicker(){
 function previewPlacement(){
  const owner=window.VSCADBridge.selected(),spec=pickerItem?.cut_spec,svg=$('pickDrawing');
  if(!svg)return null;
- const status=$('pickNotchHint'),apply=$('pickApply');
- apply.disabled=true;
- if(!owner){status.textContent='Seleziona una lastra';return null}
+ const status=$('pickNotchHint'),apply=$('pickApply'),add=$('pickAdd');
+ apply.disabled=add.disabled=true;
+ if(owner?.id!==pickerOwnerId){status.textContent='Seleziona la lastra iniziale';return null}
  const snap=$('pickSnap'),inputX=$('pickX');
  $('pickSnapLabel').hidden=!(spec?.edgeNotch&&spec.cutouts?.[0]?.length);
  inputX.readOnly=!$('pickSnapLabel').hidden&&snap.checked;
  if(inputX.readOnly)inputX.value=-Math.min(...spec.cutouts[0].map(p=>Number(p[0])));
  const x=inputX.valueAsNumber,y=$('pickY').valueAsNumber;
  const positioned=Number.isFinite(x)&&Number.isFinite(y);
- const result=pickerItem&&positioned?window.VSTechBridge.validate(pickerItem,x,y):null;
+ const candidate=pickerItem&&positioned?{item:pickerItem,x,y}:null;
+ const result=candidate?window.VSTechBridge.validateBatch([...pickerQueue,candidate]):null;
  const margin=Math.max(owner.w,owner.h)*.08;
  svg.setAttribute('viewBox',[-margin,-owner.h-margin,owner.w+2*margin,owner.h+2*margin].join(' '));
  const polygon=(points,fill,stroke)=>`<polygon points="${points.map(([px,py])=>[Number(px),-Number(py)].join(',')).join(' ')}" fill="${fill}" stroke="${stroke}" vector-effect="non-scaling-stroke"/>`;
@@ -314,6 +320,13 @@ function previewPlacement(){
  for(const hole of owner.holes){
   drawing+=hole.type==='slot' ? polygon(window.VSGeometry.slotOutline(hole),'#fff','#64748b') : circle(hole.x,hole.y,hole.r,'#fff');
  }
+ for(const [index,entry] of pickerQueue.entries()){
+  const {x,y,item}=entry;
+  for(const poly of item.cut_spec.cutouts||[])drawing+=polygon(poly.map(([px,py])=>[x+Number(px),y+Number(py)]),'#9cdcc7','#146556');
+  for(const hole of item.cut_spec.holes||[])drawing+=circle(x+Number(hole.x),y+Number(hole.y),Number(hole.r),'#9cdcc7');
+  drawing+=circle(x,y,margin/9,'#146556');
+  drawing+=`<text x="${x+margin/7}" y="${-y}" font-size="${margin/3}" fill="#146556">${index+1}</text>`;
+ }
  if(spec&&positioned){
   const fill=result?.ok?'#6ee7b7':'#fca5a5';
   for(const poly of spec.cutouts||[])drawing+=polygon(poly.map(([px,py])=>[x+Number(px),y+Number(py)]),fill,'#334155');
@@ -321,9 +334,12 @@ function previewPlacement(){
   drawing+=circle(x,y,margin/9,'#334155');
  }
  svg.innerHTML=drawing;
- apply.disabled=!result?.ok;
+ add.disabled=!result?.ok;
+ apply.disabled=!pickerQueue.length&&!result?.ok;
+ apply.textContent=pickerQueue.length?`Applica lista (${pickerQueue.length})`:'Applica accessorio';
+ $('pickQueue').innerHTML=pickerQueue.length?`<ol>${pickerQueue.map(({item,x,y},index)=>`<li>${E(item.name)} · X ${x.toFixed(1)}, Y ${y.toFixed(1)} mm <button class="btn" onclick="VSTech.removePlacement(${index})" aria-label="Rimuovi posizione ${index+1}">Rimuovi</button></li>`).join('')}</ol>`:'';
  status.textContent=result?.ok?'Posizione valida.':result?.error||(spec?'Inserisci entrambe le quote.':'Caricamento scheda…');
- return result?.ok?{x,y}:null;
+ return result?.ok?candidate:null;
 }
 function pickPoint(event){
  const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(event.currentTarget.getScreenCTM().inverse());
@@ -333,14 +349,24 @@ function pickPoint(event){
  $('pickY').value=(-point.y).toFixed(3);
  previewPlacement();
 }
-function place(){
+function queuePlacement(){
  const position=previewPlacement();
  if(!position)return;
- const res=window.VSTechBridge.place(pickerItem,position.x,position.y);
+ pickerQueue.push(position);
+ previewPlacement();
+}
+function removePlacement(index){pickerQueue.splice(index,1);previewPlacement();}
+function place(){
+ const position=previewPlacement();
+ const placements=pickerQueue.length?pickerQueue:position?[position]:[];
+ if(!placements.length||window.VSTechBridge.selected()?.id!==pickerOwnerId)return;
+ const res=window.VSTechBridge.placeBatch(placements);
  if(!res.ok)return notify(res.error);
  pickerItem=null;
+ pickerQueue=[];
  closeModal();
- notify('Accessorio inserito e lavorazioni applicate al vetro');
+ if(typeof pickerContext==='function')pickerContext();
+ notify(placements.length===1?'Accessorio applicato':placements.length+' accessori applicati');
 }
-window.VSTech={version:'R13-dxf-arc-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,pickPoint,place,parseDXF};
+window.VSTech={version:'R13-dxf-arc-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,pickPoint,queuePlacement,removePlacement,place,parseDXF};
 })();
