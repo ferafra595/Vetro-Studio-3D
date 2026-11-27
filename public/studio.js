@@ -244,7 +244,9 @@ function renderProps(){
  const motionControls=motion?`<button class="btn" onclick="VS.toggleDoor('${o.id}')">${doorPreviews.get(o.id)?.target?'Chiudi anta':'Apri anta'}</button>`:'';
  const openingFields=o.kind==='glass'?`<label class="label">Apertura<select class="field" onchange="VS.setOpening('${o.id}','openingType',this.value)"><option value="">Da modello</option>${[['fixed','Fissa'],['swing','Battente'],['slide','Scorrevole']].map(([value,label])=>`<option value="${value}" ${value===o.openingType?'selected':''}>${label}</option>`).join('')}</select></label>
  ${o.openingType==='slide'?`<label class="label">Verso di scorrimento<select class="field" onchange="VS.setOpening('${o.id}','openingSide',Number(this.value))"><option value="-1">Sinistra</option><option value="1" ${o.openingSide===1?'selected':''}>Destra</option></select></label>`:''}`:'';
- const mounting=o.technicalSpec?`<p class="small">Regolazione del modello 3D rispetto al fissaggio. Le lavorazioni restano nella posizione quotata.</p><div class="vsFieldGrid">${fields([['mountX','Offset modello X (mm)'],['mountY','Offset modello Y (mm)'],['mountZ','Distanza dal vetro (mm)'],['mountSpin','Rotazione GLB sul vetro (°)'],['mountYaw','Rotazione GLB verticale (°)'],['mountScale','Scala GLB (%)']])}</div>`:'';
+ const fit=renderMeshes.get(o.id)?.userData.hingeFit;
+ const hingeFit=o.accessoryType==='cerniera'&&o.technicalSpec?(fit==='glb'?'Vetro centrato tra le ganasce del GLB.':'Anteprima con ganasce di riferimento.'):'';
+ const mounting=o.technicalSpec?`<p class="small">Regolazione del modello 3D rispetto al fissaggio. Le lavorazioni restano nella posizione quotata.</p>${hingeFit?`<p class="small">${hingeFit}</p>`:''}<div class="vsFieldGrid">${fields([['mountX','Offset modello X (mm)'],['mountY','Offset modello Y (mm)'],['mountZ','Distanza dal vetro (mm)'],['mountSpin','Rotazione GLB sul vetro (°)'],['mountYaw','Rotazione GLB verticale (°)'],['mountScale','Scala GLB (%)']])}</div>`:'';
  el.innerHTML=`<label class="label">Nome<input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"></label>
  <div class="vsFieldGrid">${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
  ${hingeSide}${motionControls}
@@ -607,6 +609,12 @@ function createMesh(o){
      add(new Three.BoxGeometry(26,22,18),0,0,0);
      const wheel=add(new Three.CylinderGeometry(8,8,12,16),0,14,0);
      wheel.rotation.x=Math.PI/2;
+   }else if(type==='cerniera'&&o.technicalSpec){
+     const glass=glassPanels().find(panel=>panel.id===o.attachTo);
+     const thickness=N(glass?.d,8);
+     for(const side of [-1,1])add(new Three.BoxGeometry(32,72,5),10,0,side*(thickness/2+2.5));
+     add(new Three.BoxGeometry(9,72,thickness+10),-10,0,0);
+     add(new Three.BoxGeometry(50,90,4),-19,0,0).rotation.y=Math.PI/2;
    }else if(type==='cerniera'){
      add(new Three.BoxGeometry(35,70,9),-24,0,0);add(new Three.BoxGeometry(35,70,9),24,0,0);add(new Three.CylinderGeometry(6,6,76,20),0,0,9);
    }else if(type==='barra'){add(new Three.CylinderGeometry(10,10,Math.max(o.w,200),24),0,0,0).rotation.z=Math.PI/2;}
@@ -620,7 +628,10 @@ function createMesh(o){
     }
     const hardware=new Three.Group();
     hardware.add(...group.children);
-    for(const child of hardware.children)child.position.z-=bounds.min.z;
+    const owner=glassPanels().find(panel=>panel.id===o.attachTo);
+    const clamped=o.accessoryType==='cerniera'&&owner;
+    for(const child of hardware.children)child.position.z-=clamped?owner.d/2:bounds.min.z;
+    if(clamped)group.userData.hingeFit='reference';
     const mount=orientHardware(Three,o.mountEdge,hardware);
     const [dx,dy]=glassContactOffset(o);
     mount.position.set(dx+N(o.mountX),dy+N(o.mountY),N(o.mountZ));
@@ -630,7 +641,7 @@ function createMesh(o){
  }
  return mesh;
 }
-const techGLBCache=new Map();
+const techGLBCache=new Map(),hingeSlotCache=new WeakMap();
 function hardwareContact(mount,box){
  const Three=T(),point=new Three.Vector3();
  const tolerance=Math.min(2,Math.max(.2,(box.max.z-box.min.z)*.04));
@@ -667,6 +678,63 @@ function glassContactOffset(o){
  }
  return [0,0];
 }
+function findHingeSlot(mount,thickness,autoOrient){
+ const Three=T(),raycaster=new Three.Raycaster();
+ const direction=new Three.Vector3(0,0,1);
+ const materials=new Map();
+ mount.traverse(node=>{
+  if(!node.isMesh)return;
+  for(const material of Array.isArray(node.material)?node.material:[node.material]){
+   if(!materials.has(material))materials.set(material,material.side);
+   material.side=Three.DoubleSide;
+  }
+ });
+ const base=mount.rotation.y;
+ let best=null;
+ for(const turn of autoOrient?[0,Math.PI/2,-Math.PI/2,Math.PI]:[0]){
+  mount.rotation.y=base+turn;
+  mount.updateMatrixWorld(true);
+  const box=new Three.Box3().setFromObject(mount),size=box.getSize(new Three.Vector3());
+  const gaps=[];
+  for(const fx of [.64,.77,.9])for(const fy of [.24,.42,.58,.76]){
+   const x=box.min.x+size.x*fx,y=box.min.y+size.y*fy;
+   raycaster.set(new Three.Vector3(x,y,box.min.z-1),direction);
+   const cuts=[];
+   for(const hit of raycaster.intersectObject(mount,true)){
+    const z=hit.point.z;
+    if(!cuts.length||Math.abs(z-cuts.at(-1))>.05)cuts.push(z);
+   }
+   for(let i=1;i+1<cuts.length;i+=2){
+    const width=cuts[i+1]-cuts[i];
+    if(width>=thickness-.2&&width<=thickness+Math.max(4,thickness*.45)){
+     gaps.push({x,y,z:(cuts[i]+cuts[i+1])/2});
+    }
+   }
+  }
+  for(const sample of gaps){
+   const group=gaps.filter(gap=>Math.abs(gap.z-sample.z)<=.8);
+   if(group.length<3||group.length<=(best?.score||0))continue;
+   const center=new Three.Vector3();
+   for(const point of group)center.add(point);
+   best={center:center.multiplyScalar(1/group.length),angle:mount.rotation.y,score:group.length};
+  }
+ }
+ for(const [material,side] of materials)material.side=side;
+ mount.rotation.y=best?.angle??base;
+ return best?.center??null;
+}
+function cachedHingeSlot(asset,mount,thickness,autoOrient){
+ let settings=hingeSlotCache.get(asset);
+ if(!settings){settings=new Map();hingeSlotCache.set(asset,settings);}
+ const key=[thickness,mount.scale.x,mount.rotation.y,mount.rotation.z,autoOrient].join('/');
+ if(!settings.has(key)){
+  const center=findHingeSlot(mount,thickness,autoOrient);
+  settings.set(key,{center,angle:mount.rotation.y});
+ }
+ const {center,angle}=settings.get(key);
+ mount.rotation.y=angle;
+ return center;
+}
 async function loadTechnicalGLB(o,placeholder){
  if(!window.THREE?.GLTFLoader||!V?.studio||!o.technicalId)return;
  const key=o.technicalId;
@@ -685,15 +753,24 @@ async function loadTechnicalGLB(o,placeholder){
    mesh.userData.sharedStudioMaps=true;
    mesh.castShadow=true;
    mesh.receiveShadow=true;
-  });const box=new THREE.Box3().setFromObject(mount);
+  });
+  const owner=glassPanels().find(panel=>panel.id===o.attachTo);
+  const hinge=o.accessoryType==='cerniera'&&owner;
+  const slot=hinge?cachedHingeSlot(obj,mount,owner.d,!Object.hasOwn(o,'mountYaw')):null;
+  if(hinge&&!slot){
+   mount.traverse(mesh=>{mesh.geometry?.dispose();if(mesh.isMesh)for(const m of Array.isArray(mesh.material)?mesh.material:[mesh.material])m.dispose();});
+   return;
+  }
+  const box=new THREE.Box3().setFromObject(mount);
   const edgeMounted=['left','right','top','bottom'].includes(o.mountEdge);
-  const center=edgeMounted?hardwareContact(mount,box):box.getCenter(new THREE.Vector3());
-  mount.position.set(-center.x,-center.y,-box.min.z);
+  const center=slot||(edgeMounted?hardwareContact(mount,box):box.getCenter(new THREE.Vector3()));
+  mount.position.set(-center.x,-center.y,slot?-center.z-owner.d/2:-box.min.z);
+  if(slot)placeholder.userData.hingeFit='glb';
   const oriented=orientHardware(THREE,o.mountEdge,mount);
   const [dx,dy]=glassContactOffset(o);
   oriented.position.set(dx+N(o.mountX),dy+N(o.mountY),N(o.mountZ));
   placeholder.traverse(mesh=>{mesh.geometry?.dispose();mesh.material?.dispose();});
-  placeholder.clear();placeholder.add(oriented);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});updateSlideLimits();highlight();
+  placeholder.clear();placeholder.add(oriented);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});updateSlideLimits();highlight();if(U.selected===o.id)renderProps();
  }catch(e){console.warn('GLB accessorio non disponibile:',e)}
 }
 function disposeModel(group){
