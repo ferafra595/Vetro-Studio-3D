@@ -265,9 +265,18 @@ function renderPicker(items){
  <label class="label" for="pickTech">Accessorio approvato</label>
  <select class="field" id="pickTech" onchange="VSTech.updatePicker()">${items.map(t=>`<option value="${E(t.id)}">${E(t.code)} · ${E(t.name)}</option>`).join('')}</select>
  <div class="grid2"><label>X dal bordo sinistro (mm)<input class="field" type="number" step="any" id="pickX" oninput="VSTech.changePlacement()"></label>
- <label>Y dal bordo inferiore (mm)<input class="field" type="number" step="any" id="pickY" oninput="VSTech.changePlacement()"></label></div>
+ <label>Quota verticale (mm)<input class="field" type="number" step="any" id="pickY" oninput="VSTech.changePlacement()"></label></div>
  <label class="label" for="pickEdge">Aggancio</label><select class="field" id="pickEdge" onchange="VSTech.changePlacement()">
  <option value="free">Libero</option><option value="auto">Bordo più vicino</option><option value="left">Sinistro</option><option value="right">Destro</option><option value="bottom">Inferiore</option><option value="top">Superiore</option></select>
+ <label>Riferimento della quota<select class="field" id="pickVerticalRef" onchange="VSTech.changePlacement()"><option value="bottom">Dal basso</option><option value="top">Dall’alto</option></select></label>
+ <details id="pickSeries"><summary>Inserimento in serie</summary>
+ <div class="grid2"><label>Numero di accessori<input class="field" id="pickCount" type="number" step="1" min="2" max="30" value="2"></label>
+ <label>Distribuzione<select id="pickSeriesMode" class="field" onchange="VSTech.updateSeries()"><option value="spacing">Interasse fisso</option><option value="uniform">Intervalli uguali tra i bordi</option></select></label></div>
+ <div class="grid2"><label id="pickSeriesGapLabel">Interasse (mm)<input id="pickSeriesGap" class="field" type="number" min="0.1" step="any" value="400"></label>
+ <label id="pickSeriesBottomLabel" hidden>Prima dal basso (mm)<input id="pickSeriesBottom" class="field" type="number" min="0" step="any" value="250"></label>
+ <label id="pickSeriesTopLabel" hidden>Ultima dall’alto (mm)<input id="pickSeriesTop" class="field" type="number" min="0" step="any" value="250"></label></div>
+ <button type="button" class="btn" onclick="VSTech.queueSeries()">Aggiungi serie alla lista</button>
+ <p id="pickSeriesStatus" class="small" role="status"></p></details>
  <p class="small">Clicca sulla lastra per impostare la posizione oppure inserisci le quote.</p>
  <svg id="pickDrawing" width="100%" height="190" role="img" aria-label="Anteprima 2D della lastra e delle lavorazioni" onclick="VSTech.pickPoint(event)"></svg>
  <p id="pickNotchHint" class="small" role="status" aria-live="polite"></p>
@@ -327,15 +336,17 @@ function previewPlacement(){
  inputY.readOnly=vertical;
  const cutPoints=spec?.cutouts?.flat()||[];
  const coordinates=cutPoints.map(p=>p[horizontal?0:1]);
- const far=edge==='right'||edge==='top';
+ const far=edge==='right'||edge==='top',fromTop=$('pickVerticalRef').value==='top';
+ $('pickVerticalRef').disabled=vertical;
  if(horizontal||vertical){
   const extent=coordinates.length?(far?Math.max(...coordinates):Math.min(...coordinates)):0;
-  (horizontal?inputX:inputY).value=(far?(horizontal?owner.w:owner.h):0)-extent;
+  const fixed=(far?(horizontal?owner.w:owner.h):0)-extent;
+  (horizontal?inputX:inputY).value=(vertical&&fromTop)?owner.h-fixed:fixed;
  }
- const x=inputX.valueAsNumber,y=inputY.valueAsNumber;
+ const x=inputX.valueAsNumber,y=fromTop?owner.h-inputY.valueAsNumber:inputY.valueAsNumber;
  const positioned=Number.isFinite(x)&&Number.isFinite(y);
  const original=typeof editingIndex==='string'?mounted.find(p=>p.existingId===editingIndex):pickerQueue[editingIndex];
- const candidate=item&&positioned&&draftActive?{item,x,y,existingId:original?.existingId}:null;
+ const candidate=item&&positioned&&draftActive?{item,x,y,existingId:original?.existingId,anchor:vertical?null:{edge:fromTop?'top':'bottom',distance:inputY.valueAsNumber}}:null;
  const placements=pickerQueue.slice();
  if(candidate){
   if(Number.isInteger(editingIndex))placements[editingIndex]=candidate;
@@ -383,7 +394,7 @@ function previewPlacement(){
  $('pickMounted').innerHTML=installed?`<h4>Già montati</h4><ul>${installed}</ul>`:'';
  const edgeLabels={left:'sinistro',right:'destro',bottom:'inferiore',top:'superiore'};
  status.textContent=result?.error||(draftActive&&!candidate?'Inserisci entrambe le quote.':candidate?(edgeLabels[edge]?'Aggancio valido · bordo '+edgeLabels[edge]:'Posizione valida.'):'Clicca sulla lastra o scegli Sposta.');
- return {candidate,placements,ok:result?.ok};
+ return {candidate,placements,ok:result?.ok,item,x,y,owner,vertical,fromTop};
 
 }
 function pickPoint(event){
@@ -398,7 +409,7 @@ function pickPoint(event){
   autoEdge=[['left',point.x],['right',owner.w-point.x],['bottom',y],['top',owner.h-y]].sort((a,b)=>a[1]-b[1])[0][0];
  }
  $('pickX').value=point.x.toFixed(3);
- $('pickY').value=y.toFixed(3);
+ $('pickY').value=($('pickVerticalRef').value==='top'?owner.h-y:y).toFixed(3);
  changePlacement();
 }
 function changePlacement(){draftActive=true;previewPlacement();}
@@ -416,10 +427,48 @@ function editPlacement(index,existing=false){
  if([...$('pickTech').options].some(option=>option.value===entry.item.id))$('pickTech').value=entry.item.id;
  $('pickEdge').value=edge;
  $('pickX').value=entry.x;
- $('pickY').value=entry.y;
+ const fromTop=entry.anchor?.edge==='top';
+ $('pickVerticalRef').value=fromTop?'top':'bottom';
+ $('pickY').value=fromTop?window.VSTechBridge.selected().h-entry.y:entry.y;
  draftActive=false;
  previewPlacement();
  ($('pickX').readOnly?$('pickY'):$('pickX')).focus();
+}
+function updateSeries(){
+ const uniform=$('pickSeriesMode').value==='uniform';
+ $('pickSeriesGapLabel').hidden=uniform;
+ $('pickSeriesBottomLabel').hidden=$('pickSeriesTopLabel').hidden=!uniform;
+ $('pickSeriesStatus').textContent='';
+}
+function queueSeries(){
+ const preview=previewPlacement(),status=$('pickSeriesStatus');
+ if(!preview?.item||preview.vertical||editingIndex!==null||!Number.isFinite(preview.x)){
+  status.textContent='Scegli un accessorio e una posizione verticale libera o su un bordo laterale.';
+  return;
+ }
+ const {item,x,y,owner,fromTop}=preview,count=$('pickCount').valueAsNumber;
+ const uniform=$('pickSeriesMode').value==='uniform';
+ const start=$('pickSeriesBottom').valueAsNumber,end=$('pickSeriesTop').valueAsNumber;
+ const gap=uniform?(owner.h-start-end)/(count-1):$('pickSeriesGap').valueAsNumber;
+ if(!Number.isInteger(count)||count<2||count>30||!(gap>0)||(uniform&&(!(start>=0)||!(end>=0)))||(!uniform&&!Number.isFinite(y))){
+  status.textContent='Controlla il numero di accessori e le distanze.';
+  return;
+ }
+ const added=Array.from({length:count},(_,i)=>{
+  const height=uniform?start+i*gap:y+i*gap*(fromTop?-1:1);
+  const anchor=uniform?{edge:'uniform',bottom:start,top:end,fraction:i/(count-1)}:{edge:fromTop?'top':'bottom',distance:fromTop?owner.h-height:height};
+  return {item,x,y:Number(height.toFixed(4)),anchor};
+ });
+ if(added.some(entry=>entry.y<0||entry.y>owner.h)){
+  status.textContent='La serie supera l’altezza della lastra.';
+  return;
+ }
+ const next=[...pickerQueue,...added],result=window.VSTechBridge.validateBatch(next);
+ if(!result.ok){status.textContent=result.error;return;}
+ pickerQueue=next;
+ draftActive=false;
+ previewPlacement();
+ status.textContent=`${count} accessori in lista · interasse ${Number(gap.toFixed(3))} mm`;
 }
 function queuePlacement(){
  const preview=previewPlacement();
@@ -445,5 +494,5 @@ function place(){
  if(typeof pickerContext==='function')pickerContext();
  notify(placements.length===1?'Accessorio applicato':placements.length+' accessori applicati');
 }
-window.VSTech={version:'20261127-exact-notches',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,changePlacement,cancelPlacement,editPlacement,pickPoint,queuePlacement,removePlacement,place,parseDXF};
+window.VSTech={version:'20261127-exact-notches',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,changePlacement,cancelPlacement,editPlacement,pickPoint,updateSeries,queueSeries,queuePlacement,removePlacement,place,parseDXF};
 })();

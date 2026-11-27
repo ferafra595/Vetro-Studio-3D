@@ -278,7 +278,13 @@ function draw(){if(!s)return;const svg=$('cadCanvas'),el=$('cadStats'),d=dimensi
  if(snapshot()!==s.initialSnapshot)$('cadSaveState').textContent='Modifiche da salvare';else window.VS.saveState();
  $('cadTools').querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===s.tool));$('cadUndo').disabled=!s.undo.length;$('cadRedo').disabled=!s.redo.length;$('cadApply').disabled=!ok;
  $('cadDimensions').innerHTML=`<div class="cad-two"><label>Larghezza (mm)<input id="cadWidth" type="number" min="1" step="0.001" value="${round(d.w)}"></label><label>Altezza (mm)<input id="cadHeight" type="number" min="1" step="0.001" value="${round(d.h)}"></label></div>`;
- $('cadWidth').onchange=e=>resize('x',e.target.value);$('cadHeight').onchange=e=>resize('y',e.target.value);
+ $('cadWidth').onchange=e=>resize('x',e.target.value);$('cadHeight').onchange=e=>{
+  if(!s.fittings.length)return resize('y',e.target.value);
+  if(snapshot()!==s.initialSnapshot)return setStatus('Applica le modifiche alla sagoma prima di cambiare l’altezza.',true);
+  const {id,fittingId}=s;
+  if(window.VSCADBridge.resizeHeight(id,e.target.valueAsNumber)){close();window.VS.openCad(id,fittingId);}
+  else render();
+ };
 }
 function render(){draw();props()}
 window.VSCAD2D={open,close};

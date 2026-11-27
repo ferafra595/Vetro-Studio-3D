@@ -219,7 +219,7 @@ function build(cat,t){const a=[],code=t[0],kind=t[2],fix=t[3],cfg={category:cat,
 function choose(cat,code){const entry=catalog[cat]?.find(t=>t[0]===code);if(!entry)return;doorPreviews.clear();remember();const result=build(cat,entry);model().objects=result.objects;model().studio=result.studio;model().type=cat;U.selected=null;U.tab='objects';U.drawer=true;refresh(true);frameModel()}
 function blank(){remember();model().objects=[];model().studio={category:'libero',template:null,settings:{}};U.selected=null;refresh(true)}
 function refresh(modelChanged=false){if(modelChanged)drawScene();renderSidebar();renderProps();updatePricing();updateTitle();queueAutosave()}
-function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=setTimeout(async()=>{if(U.loading||!['designer','cad'].includes(S.view))return;try{U.loading=true;await saveCurrent()}catch(e){console.warn('Autosave:',e)}finally{U.loading=false}},5000)}
+function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=setTimeout(async()=>{if(U.loading||!['designer','cad'].includes(S.view)||projectSignature()===savedProjectState)return;try{U.loading=true;await saveCurrent()}catch(e){console.warn('Autosave:',e)}finally{U.loading=false}},5000)}
 const architecturalFinishes=[
  ['tile','Grès avorio','#d1cdc0'],['tileSage','Ceramica salvia','#8b9d8d'],['tileSlate','Grès ardesia','#59636a'],
  ['ceramic','Ceramica bianca','#e4e4df'],['concrete','Cemento architettonico','#969e9d'],['stone','Pietra naturale','#a8a093'],
@@ -319,7 +319,7 @@ function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'
 function updatePricing(){let el=$id('vsQuote');if(!el)return;let p=pricingModel();el.innerHTML=`<div class="vsMetric">Vetro <b>${p.area.toFixed(2)} m²</b></div><div class="vsMetric">Materiali <b>${eur(p.material)}</b></div><div class="vsMetric">Accessori <b>${eur(p.accessories)}</b></div><div class="vsMetric">Imponibile <b>${eur(p.net)}</b></div><div class="vsMetric">Totale IVA inclusa <strong>${eur(p.total)}</strong></div><p class="small">Prezzi indicativi: da configurare nei listini della vetreria.</p>`}
 let activeProject;
 function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';if(activeProject!==S.current){activeProject=S.current;savedProjectState=S.current.id?projectSignature():null;savingProject=false;saveFailed=false;U.undo=[];U.redo=[];U.selected=null}}
-function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small><span id="vsSaveState" class="small" role="status"></span></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="VS.shapeEditor()">2D</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><button class="btn" onclick="VS.downloadDxf()">Scarica DXF</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">Commessa</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic sull’anta per aprirla · Alt + trascina per ruotare</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Commessa</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}<hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title();VS.saveState()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value;VS.saveState()"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></details></aside></div></div>`}
+function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small><span id="vsSaveState" class="small" role="status"></span></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="VS.shapeEditor()">2D</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><button class="btn" onclick="VS.reviewDelivery()">Controlla commessa</button><button class="btn" onclick="VS.downloadDxf()">Scarica DXF</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">Commessa</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic sull’anta per aprirla · Alt + trascina per ruotare</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Commessa</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}<hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title();VS.saveState()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value;VS.saveState()"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></details></aside></div></div>`}
 // Three.js rendering. Single source of truth: model().objects.
 function glassPanels(){return model().objects.filter(o=>['glass','mirror'].includes(o.kind));}
 const cadColors=['#126776','#a24921','#5455a0','#39764b','#945173','#68503a'];
@@ -470,7 +470,7 @@ function moveTechnicalAccessory(o,position,preview=false){
  const edge=o.mountEdge;
  const localX=['left','right'].includes(edge)?o.localX:mm(owner.w/2+x);
  const localY=['bottom','top'].includes(edge)?o.localY:mm(owner.h/2+y);
- const candidate={...o,localX,localY};
+ const candidate={...o,localX,localY,verticalAnchor:o.localY===localY?o.verticalAnchor:null};
  linkedAccessoryPosition(candidate);
  if(preview){
   const mesh=renderMeshes.get(o.id);
@@ -569,7 +569,7 @@ function prepareTechnicalBatch(placements){
  const pending=[];
  const excluded=new Set(placements.map(p=>p.existingId).filter(Boolean));
  if(!placements.length)return {ok:false,error:'Aggiungi almeno una posizione'};
- for(const [index,{item,x,y,existingId}] of placements.entries()){
+ for(const [index,{item,x,y,existingId,anchor,upgrade}] of placements.entries()){
   const placement=technicalPlacement(item,x,y,pending,excluded);
   if(!placement.ok)return {ok:false,error:'Accessorio '+(index+1)+' · '+placement.error};
   const {owner,spec}=placement;
@@ -577,7 +577,7 @@ function prepareTechnicalBatch(placements){
   if(existingId&&(!original||pending.some(o=>o.existingId===existingId)))return {ok:false,error:'Accessorio da spostare non disponibile'};
   if([...model().objects.filter(o=>!excluded.has(o.id)),...pending].some(o=>o.attachTo===owner.id&&o.technicalId===item.id&&Math.hypot(o.localX-x,o.localY-y)<.1))
    return {ok:false,error:'Accessorio '+(index+1)+' · già presente in questa posizione'};
-  pending.push({kind:'accessory',attachTo:owner.id,technicalId:item.id,technicalSpec:spec,localX:x,localY:y,item,existingId});
+  pending.push({kind:'accessory',attachTo:owner.id,technicalId:item.id,technicalSpec:spec,localX:x,localY:y,verticalAnchor:anchor||null,item,existingId,upgrade});
  }
  return {ok:true,pending};
 }
@@ -585,14 +585,14 @@ function placeTechnicalBatch(placements){
  const result=prepareTechnicalBatch(placements);
  if(!result.ok)return result;
  remember();
- const added=result.pending.map(({item,kind,existingId,...position})=>{
+ const added=result.pending.map(({item,kind,existingId,upgrade,...position})=>{
   const data={
    ...position,accessoryType:item.category,technicalCode:item.code,
    technicalSpec:structuredClone(position.technicalSpec),technicalUpdatedAt:item.updated_at,mountEdge:item.mountEdge,
    technicalUnitPrice:Math.max(0,N(item.price))
   };
   const o=existingId?model().objects.find(o=>o.id===existingId):object(kind,item.name,0,0,0,50,65,35,data);
-  if(existingId)Object.assign(o,position,{technicalSpec:data.technicalSpec,mountEdge:item.mountEdge});
+  if(existingId)Object.assign(o,upgrade?data:{...position,technicalSpec:data.technicalSpec,mountEdge:item.mountEdge});
   linkedAccessoryPosition(o);
   return o;
  });
@@ -1344,6 +1344,23 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.dist=Math.max(250,M
 function select(id){U.selected=id;highlight();renderProps();renderSidebar()}
 function add(kind){remember();let data={glass:[1000,1700,10],wall:[1900,2300,150],floor:[2000,90,1500],stair:[950,50,285],balcony:[2600,130,1100],profile:[50,1200,35],mirror:[800,1400,6]}[kind]||[900,1200,10],o=object(kind,{glass:'Lastra',wall:'Muro',floor:'Pavimento',stair:'Gradino',balcony:'Balcone',profile:'Profilo',mirror:'Specchio'}[kind],0,data[1]/2,0,...data);if(['wall','floor','balcony','stair'].includes(kind))o.finish=kind==='stair'?'wood':kind==='floor'?'stone':'concrete';model().objects.push(o);U.selected=o.id;refresh(true)}
 function accessory(kind){let owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!owner)return toast('Seleziona prima un vetro');remember();let o=object('accessory',kind,owner.x+owner.w*.28,owner.y,owner.z+owner.d/2+25,50,kind==='maniglia'?220:65,35,{accessoryType:kind,attachTo:owner.id});model().objects.push(o);U.selected=o.id;refresh(true)}
+function resizeTechnicalAnchors(panel){
+ const changed=model().objects.filter(o=>o.attachTo===panel.id&&o.technicalSpec&&o.verticalAnchor);
+ if(!changed.length)return null;
+ const excluded=new Set(changed.map(o=>o.id));
+ const pending=[];
+ for(const o of changed){
+  const ref=o.verticalAnchor;
+  if(ref.edge==='uniform'&&panel.h<=ref.top+ref.bottom)return 'La lastra è troppo bassa per mantenere le distanze dai bordi';
+  const y=ref.edge==='uniform'?ref.bottom+(panel.h-ref.bottom-ref.top)*ref.fraction:ref.edge==='top'?panel.h-ref.distance:ref.distance;
+  if(y<0||y>panel.h)return 'Una quota della ferramenta supera l’altezza della lastra';
+  const error=technicalPatternValid(panel,o.technicalSpec,o.localX,y,excluded,pending);
+  if(error)return o.name+' · '+error;
+  pending.push({...o,id:null,sourceId:o.id,localY:cutCoordinate(y)});
+ }
+ for(const candidate of pending)model().objects.find(o=>o.id===candidate.sourceId).localY=candidate.localY;
+ return null;
+}
 function edit(id,key,val){
  const o=model().objects.find(o=>o.id===id);if(!o)return;
  if((o.curve||o.trayRadius)&&['w','h','d','x','y','z','rx','ry','rz'].includes(key))return toast('Modifica le misure partendo dal modello semicircolare');
@@ -1358,6 +1375,7 @@ function edit(id,key,val){
   if(error)toast(error);
   return;
  }
+ const originalHeight=key==='h'?structuredClone(o):null;
  remember();o[key]=value;
  if((key==='w'||key==='h')&&o.shape?.length>=3){
   const idx=key==='w'?0:1,ratio=value/Math.max(1,oldValue);
@@ -1370,8 +1388,13 @@ function edit(id,key,val){
   }
   o.holes=(o.holes||[]).map(h=>({...h,[idx===0?'x':'y']:mm(h[idx===0?'x':'y']*ratio)}));
  }
+ if(originalHeight&&['glass','mirror'].includes(o.kind)){
+  const error=resizeTechnicalAnchors(o);
+  if(error){Object.assign(o,originalHeight);U.undo.pop();refresh(true);return toast(error);}
+ }
  if(['x','y','z'].includes(key)&&['glass','mirror'].includes(o.kind))for(const item of model().objects){if(item.attachTo===o.id)item[key]=mm(N(item[key])+(value-N(oldValue)))}
  refresh(true);
+ return true;
 }
 function duplicate(){let o=model().objects.find(o=>o.id===U.selected);if(!o)return;if(o.technicalSpec)return toast('Per duplicare una lavorazione tecnica, seleziona la lastra e inserisci una nuova istanza dalla libreria');remember();let copy=structuredClone(o);copy.id=uid();copy.x+=140;copy.name+=' (copia)';model().objects.push(copy);U.selected=copy.id;refresh(true)}
 function remove(){if(!U.selected)return;remember();model().objects=model().objects.filter(o=>o.id!==U.selected&&o.attachTo!==U.selected);U.selected=null;refresh(true)}
@@ -1382,10 +1405,155 @@ function shapeEditor(){
  if(!panel)return toast('Aggiungi una lastra per aprire il CAD 2D');
  openCad(panel.id,U.selected===panel.id?null:U.selected);
 }
-function downloadDxf(id=selectedPanel()?.id){
- if(id)return exportDXF(id);
- return exportDXF();
+function deliveryRevision(){
+ const p=S.current;
+ return p?.id&&Number.isInteger(p.revision)&&projectSignature()===savedProjectState?`Revisione ${p.revision}`:'Bozza';
 }
+function deliveryFilename(){
+ return safeFile(S.current.title)+(deliveryRevision()==='Bozza'?'-bozza':'-r'+S.current.revision);
+}
+function panelDeliveryIssue(panel){
+ if(panel.curve)return 'Lastra curva: mancano gli elaborati piani';
+ try{
+  const shape=technicalGlassShape(panel),holes=technicalHoles(panel);
+  const result=window.VSGeometry.validate(shape.outline,holes);
+  if(!result.ok)return result.error;
+  for(const part of model().objects.filter(o=>o.attachTo===panel.id&&o.technicalSpec)){
+   const error=technicalPatternValid(panel,part.technicalSpec,part.localX,part.localY,part.id);
+   if(error)return part.name+' · '+error;
+  }
+ }catch(e){return e.message;}
+ return null;
+}
+let deliveryReview;
+function reviewMarkup(review){
+ const {panels,format,panelId,library,error}=review;
+ const blocked=panels.some(p=>p.issue);
+ const label={pdf:'Apri preventivo',workshop:'Scarica scheda',dxf:'Scarica DXF'}[format];
+ const revision=deliveryRevision();
+ const cards=panels.map(({panel,index,parts,issue})=>`<section class="panel">
+ <strong>Lastra ${index+1} · ${esc(panel.name)}</strong>
+ <p>${panel.w} × ${panel.h} × ${panel.d} mm · ${technicalHoles(panel).length} forature/asole · ${parts.reduce((n,p)=>n+(p.technicalSpec.cutouts?.length||0),0)} scassi</p>
+ ${issue?`<p class="danger">${esc(issue)}</p>`:''}
+ ${parts.length?`<ul>${parts.map(part=>{
+  const row=library?.find(o=>o.id===part.technicalId);
+  const compare=row?.status==='approved';
+  const newer=compare&&row.updated_at!==part.technicalUpdatedAt;
+  const key=review.parts.indexOf(part.id);
+  return `<li>${esc(part.technicalCode||part.name)} · Y ${N(part.localY)} mm
+   <button class="btn" onclick="VS.reviewInspect(${index},${key})">Apri in 2D</button>
+   ${library&&!row?'<span class="small">Scheda non disponibile</span>':row?.status==='draft'?'<span class="small">Scheda in bozza</span>':compare?`<button class="btn" onclick="VS.compareFitting(${key})">${newer?'Confronta revisione':'Confronta scheda'}</button>`:''}</li>`;
+ }).join('')}</ul>`:''}
+ <button class="btn" onclick="VS.reviewInspect(${index})" ${panel.curve?'disabled':''}>Controlla lastra in 2D</button>
+ </section>`).join('');
+ return `<div class="vsDelivery"><h3>Controllo commessa</h3><p>${esc(revision)}${revision==='Bozza'?' · Salva la commessa per assegnare la revisione.':''}</p>
+ ${error?`<p class="small">${esc(error)}</p>`:!library&&review.parts.length?'<p class="small">Verifica Libreria tecnica in corso…</p>':''}
+ ${cards}
+ <div class="actions">
+ ${revision==='Bozza'?'<button class="btn" onclick="VS.saveDelivery()">Salva revisione</button>':''}
+ ${label?`<button class="btn primary" onclick="VS.finishDelivery()" ${blocked&&format!=='pdf'?'disabled':''}>${label}</button>`:`<button class="btn primary" onclick="VS.reviewDelivery('workshop')">Scheda lavorazioni</button><button class="btn" onclick="VS.reviewDelivery('dxf')">DXF commessa</button>`}
+ </div></div>`;
+}
+async function reviewDelivery(format=null,panelId){
+ const panels=glassPanels().map((panel,index)=>({panel,index})).filter(o=>!panelId||o.panel.id===panelId);
+ if(!panels.length&&format!=='pdf')return toast('Nessuna lastra da controllare');
+ for(const item of panels){
+  item.parts=model().objects.filter(o=>o.attachTo===item.panel.id&&o.technicalSpec);
+  item.issue=panelDeliveryIssue(item.panel);
+ }
+ const review={format,panelId,panels,parts:panels.flatMap(o=>o.parts.map(p=>p.id)),signature:projectSignature()};
+ deliveryReview=review;
+ openModal(reviewMarkup(review));
+ if(!review.parts.length)return;
+ try{review.library=(await api('/technical-accessories')).items||[];}
+ catch{review.error='La Libreria tecnica non è disponibile per il confronto.';}
+ const root=$id('modal');
+ if(deliveryReview===review&&!root.classList.contains('hidden')&&root.querySelector('.vsDelivery')&&!root.querySelector('[data-fitting-compare]'))
+  openModal(reviewMarkup(review));
+}
+function patternSummary(spec){
+ const points=(spec.cutouts||[]).flat();
+ const dims=spec.sourceDimensions;
+ const format=(n)=>Number(n.toFixed(3));
+ const extents=points.length?[0,1].map(axis=>format(Math.max(...points.map(p=>p[axis]))-Math.min(...points.map(p=>p[axis])))):null;
+ const measurements=dims?` · Ø ${dims.diameter} · Interasse ${dims.centerSpacing} · Apertura ${dims.opening} · Profondità ${dims.notchDepth} mm`:extents?` · Ingombro tagli ${extents.join(' × ')} mm`:'';
+ return `${spec.holes?.length||0} fori · ${spec.cutouts?.length||0} scassi${measurements}`;
+}
+async function compareFitting(index){
+ const review=deliveryReview;
+ const mounted=model().objects.find(o=>o.id===review?.parts[index]);
+ if(!mounted)return;
+ try{
+  const {item}=await api('/technical-accessories/'+encodeURIComponent(mounted.technicalId));
+  if(deliveryReview!==review||$id('modal').classList.contains('hidden'))return;
+  if(item.status!=='approved')return toast('La nuova scheda deve essere approvata');
+  const panel=glassPanels().find(o=>o.id===mounted.attachTo);
+  const updated=orientTechnicalItem({...item,cut_spec:JSON.parse(item.cut_spec)},mounted.mountEdge||'free');
+  const cuts=updated.cut_spec;
+  const edge=mounted.mountEdge;
+  const horizontal=['left','right'].includes(edge),vertical=['bottom','top'].includes(edge);
+  let {localX:x,localY:y}=mounted;
+  if(horizontal||vertical){
+   const far=edge==='right'||edge==='top';
+   const coords=cuts.cutouts.flat().map(p=>p[horizontal?0:1]);
+   const border=coords.length?(far?Math.max(...coords):Math.min(...coords)):0;
+   if(horizontal)x=(far?panel.w:0)-border;
+   else y=(far?panel.h:0)-border;
+  }
+  const oldSpec=mounted.technicalSpec;
+  const unchanged=JSON.stringify([oldSpec.holes,oldSpec.cutouts,oldSpec.exactPaths])===JSON.stringify([cuts.holes,cuts.cutouts,cuts.exactPaths]);
+  review.upgrade={mountedId:mounted.id,updated,x,y};
+  openModal(`<div class="vsDelivery" data-fitting-compare><h3>Confronto scheda · ${esc(mounted.name)}</h3>
+   <p><strong>In commessa</strong><br>${esc(patternSummary(oldSpec))} · ${eur(mounted.technicalUnitPrice||0)}</p>
+   <p><strong>In Libreria tecnica</strong><br>${esc(patternSummary(cuts))} · ${eur(item.price||0)}</p>
+   <p>${unchanged?'Geometria coincidente.':'La geometria della nuova scheda è diversa.'}</p>
+   <p>Quota proposta · X ${cutCoordinate(x)}, Y ${cutCoordinate(y)} mm</p>
+   <div class="actions"><button class="btn" onclick="VS.backToReview()">Torna al controllo</button>
+   <button class="btn primary" onclick="VS.applyFittingRevision()">Applica scheda alla commessa</button></div></div>`);
+ }catch(e){toast(e.message);}
+}
+function backToReview(){
+ if(deliveryReview)openModal(reviewMarkup(deliveryReview));
+}
+function applyFittingRevision(){
+ const review=deliveryReview;
+ if(!review?.upgrade||review.signature!==projectSignature())return;
+ const {mountedId,updated,x,y}=review.upgrade;
+ const mounted=model().objects.find(o=>o.id===mountedId);
+ if(!mounted)return;
+ const selection=U.selected;
+ U.selected=mounted.attachTo;
+ const result=placeTechnicalBatch([{item:updated,x,y,existingId:mounted.id,anchor:mounted.verticalAnchor,upgrade:true}]);
+ U.selected=selection;
+ if(!result.ok)return toast(result.error);
+ techGLBCache.delete(mounted.technicalId);
+ refresh(true);
+ reviewDelivery(review.format,review.panelId);
+}
+function reviewInspect(index,fitting){
+ const panel=glassPanels()[index];
+ if(!panel||panel.curve)return;
+ closeModal();
+ window.VSCAD2D.close();
+ openCad(panel.id,deliveryReview.parts[fitting]);
+}
+async function saveDelivery(){
+ const review=deliveryReview;
+ await saveCurrent();
+ if(review===deliveryReview)reviewDelivery(review.format,review.panelId);
+}
+function finishDelivery(){
+ const review=deliveryReview;
+ if(!review)return;
+ if(review.signature!==projectSignature())return reviewDelivery(review.format,review.panelId);
+ if(review.format!=='pdf'&&review.panels.some(p=>panelDeliveryIssue(p.panel)))return reviewDelivery(review.format,review.panelId);
+ closeModal();
+ if(review.format==='dxf')exportDXF(review.panelId);
+ if(review.format==='workshop')exportWorkshopSheet();
+ if(review.format==='pdf')exportQuote();
+}
+function downloadDxf(id=selectedPanel()?.id){return reviewDelivery('dxf',id);}
+
 function shapeModal(){
  openModal(`<div class="vsCadHead"><div><h3>Disegno tecnico 2D · Lastra</h3><p class="small">Quote in millimetri. Clicca e trascina un vertice oppure inserisci le coordinate. Doppio clic su un lato per creare un nuovo punto.</p></div></div>
  <div class="vsCadTools"><label>Passo griglia <select id="vsCadGrid" onchange="VS.cadGrid(this.value)"><option value="1">1 mm</option><option value="5">5 mm</option><option value="10" selected>10 mm</option><option value="25">25 mm</option><option value="50">50 mm</option></select></label><label><input id="vsCadSnap" type="checkbox" checked onchange="VS.cadSnap(this.checked)"> Aggancio griglia</label><button class="btn" onclick="VS.cadZoom(1.25)">Zoom +</button><button class="btn" onclick="VS.cadZoom(.8)">Zoom −</button><button class="btn" onclick="VS.cadZoom(0)">Adatta</button></div>
@@ -1445,12 +1613,12 @@ function toggleRight(){document.body.classList.toggle('vsRightClosed')}
 function toggleQuote(){document.body.classList.remove('vsRightClosed');$id('vsQuoteDetails').open=!$id('vsQuoteDetails').open}
 function cameraPreset(k){const p={iso:[.65,.35],front:[0,0],side:[Math.PI/2,0],top:[0,Math.PI/2-.02]}[k]||[.65,.35];orbit.az=p[0];orbit.el=p[1];positionCamera()}
 function switchMode(){viewMode=viewMode==='real'?'technical':'real';$id('vsVisualBtn').textContent=viewMode==='real'?'✦ Realistico':'▦ Tecnico';drawScene()}
-function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='dxf-panel')exportDXF(selectedPanel()?.id??null);if(v==='workshop')exportWorkshopSheet();if(v==='gltf')downloadGLTF()}
+function exports(v){if(v==='pdf')reviewDelivery('pdf');if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')reviewDelivery('dxf');if(v==='dxf-panel'){const id=selectedPanel()?.id;if(id)reviewDelivery('dxf',id);else toast('Seleziona una lastra da esportare');}if(v==='workshop')reviewDelivery('workshop');if(v==='gltf')downloadGLTF()}
 function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-vstab]').forEach(b=>b.classList.toggle('active',b.dataset.vstab===U.tab))}
 function cost(k,v){model()[k]=N(v);updatePricing();saveState();queueAutosave()}
 window.VSTechBridge={mounted(ownerId){
  return model().objects.filter(o=>o.attachTo===ownerId&&o.technicalId&&o.technicalSpec).map(o=>({
-  existingId:o.id,x:o.localX,y:o.localY,item:{id:o.technicalId,name:o.name,code:o.technicalCode,category:o.accessoryType,
+  existingId:o.id,x:o.localX,y:o.localY,anchor:o.verticalAnchor,item:{id:o.technicalId,name:o.name,code:o.technicalCode,category:o.accessoryType,
    status:'approved',glass_min:0,glass_max:100,price:o.technicalUnitPrice,cut_spec:structuredClone(o.technicalSpec),mountEdge:o.mountEdge||'free'}
  }));
 },selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},orient:orientTechnicalItem,validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
@@ -1460,6 +1628,7 @@ window.VSCADBridge={
   points:(o.technicalSpec.cutouts||[]).flat()
  }));},
  moveFitting:moveFittingTo,
+ resizeHeight:(id,height)=>edit(id,'h',height),
  panels:()=>glassPanels().map(({id,name})=>({id,name})),
  selected(excluded=null){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o,[],excluded);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o,excluded),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch,technicalProfile:shape.edgeNotch?technicalContourProfile(o,shape.outline):null}},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
@@ -1471,7 +1640,7 @@ window.VSCADBridge={
  else delete o.cadProfile;
  refresh(true);return {ok:true};},
 };
-window.VS={downloadDxf,editFitting,saveState,toggleDoor,setHingeSide,setOpening,cadPage,openCad,show3D,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
+window.VS={deliveryRevision,reviewDelivery,reviewInspect,saveDelivery,finishDelivery,compareFitting,backToReview,applyFittingRevision,downloadDxf,editFitting,saveState,toggleDoor,setHingeSide,setOpening,cadPage,openCad,show3D,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
 // Existing SaaS remains untouched. Only the old editor entrypoints are replaced.
 designer=designerHTML;init3d=initStudio;rebuild3d=drawScene;camPreset=cameraPreset;calc=pricingModel;
 exportDXF=function(panelId){
@@ -1500,7 +1669,8 @@ exportDXF=function(panelId){
   contour(profile,layer);
   for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of derived.voids)contour(technicalContourProfile(o,polygon),layer+'_TAGLI')
  }
- rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+(panelId===undefined?'':'-lastra-'+(panels.findIndex(o=>o.id===panelId)+1))+'.dxf',rows.join('\n'),'application/dxf')};
+ rows.splice(rows.indexOf('ENTITIES')+1,0,'999','VetroStudio · '+deliveryRevision());
+ rows.push('0','ENDSEC','0','EOF');download('vetri-'+deliveryFilename()+(panelId===undefined?'':'-lastra-'+(panels.findIndex(o=>o.id===panelId)+1))+'.dxf',rows.join('\n'),'application/dxf')};
 function exportWorkshopSheet(){
  const panels=model().objects.filter(o=>['glass','mirror'].includes(o.kind));
  if(!panels.length)return toast('Nessuna lastra da esportare');
@@ -1530,13 +1700,13 @@ function exportWorkshopSheet(){
  const title=esc(S.current.title);
  const page=`<!doctype html><html lang="it"><meta charset="utf-8"><title>Scheda lavorazioni · ${title}</title>
  <style>body{font:14px system-ui;color:#132835;max-width:780px;margin:30px auto;padding:0 16px}section{border-top:1px solid #b8c6ca;margin-top:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccd4d8;padding:6px;text-align:left}svg{display:block}tr{break-inside:avoid}</style>
- <h1>Scheda lavorazioni · ${title}</h1><p>Quote in millimetri, origine in basso a sinistra della vista frontale. Per la geometria degli scassi usa il DXF della lastra e verifica gli elaborati prima della lavorazione.</p>
+ <h1>Scheda lavorazioni · ${title}</h1><p>${esc(deliveryRevision())}</p><p>Quote in millimetri, origine in basso a sinistra della vista frontale. Per la geometria degli scassi usa il DXF della lastra e verifica gli elaborati prima della lavorazione.</p>
  ${sections.join('')}</html>`;
- download('scheda-lavorazioni-'+safeFile(S.current.title)+'.html',page,'text/html;charset=utf-8');
+ download('scheda-lavorazioni-'+deliveryFilename()+'.html',page,'text/html;charset=utf-8');
 }
 exportCSV=function(){const p=pricingModel(),rows=[['Voce','Valore'],['Superficie vetro m²',p.area.toFixed(2)],['Materiali €',p.material.toFixed(2)],['Accessori €',p.accessories.toFixed(2)],['Imponibile €',p.net.toFixed(2)],['IVA €',p.tax.toFixed(2)],['Totale €',p.total.toFixed(2)]];download('distinta-'+safeFile(S.current.title)+'.csv','\uFEFF'+rows.map(r=>r.map(v=>String(v)).join(';')).join('\r\n'),'text/csv')};
 const style=document.createElement('style');style.textContent=`
-#vsSaveState{display:block;margin-top:3px;font-size:11px;color:#536f79}.vsFieldGrid[hidden]{display:none}.vsTreeGroup{display:grid;gap:4px}.vsTreeChildren{display:grid;gap:4px;margin-left:14px}.vsTreeRow[aria-pressed=true]{font-weight:700}.cadPanelCard{display:flex;align-items:center;gap:12px;text-align:left}.cadPanelCard svg{flex:none}body.vsActive{overflow:hidden}body.vsActive .sidebar,body.vsActive .top{display:none!important}body.vsActive .main{width:100%;height:100vh;overflow:hidden}body.vsActive #page{padding:0;max-width:none;margin:0;height:100vh;overflow:hidden}
+.modal:has(.vsDelivery){z-index:100001}.vsDelivery section{margin:.6rem 0}.vsDelivery li{margin:.4rem 0}#vsSaveState{display:block;margin-top:3px;font-size:11px;color:#536f79}.vsFieldGrid[hidden]{display:none}.vsTreeGroup{display:grid;gap:4px}.vsTreeChildren{display:grid;gap:4px;margin-left:14px}.vsTreeRow[aria-pressed=true]{font-weight:700}.cadPanelCard{display:flex;align-items:center;gap:12px;text-align:left}.cadPanelCard svg{flex:none}body.vsActive{overflow:hidden}body.vsActive .sidebar,body.vsActive .top{display:none!important}body.vsActive .main{width:100%;height:100vh;overflow:hidden}body.vsActive #page{padding:0;max-width:none;margin:0;height:100vh;overflow:hidden}
 .vsWorkspace{display:flex;flex-direction:column;height:100vh;background:#edf1f2}.vsHeader{height:66px;background:white;border-bottom:1px solid #dce7e8;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;gap:12px}.vsLogo{font-weight:900;font-size:19px;white-space:nowrap}.vsLogo span{color:#22a994}.vsLogo small{font-size:12px;color:#8b9da6;margin-left:12px;font-weight:500}.vsHeadActions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.vsHeadActions .btn{font-size:12px;padding:9px 11px}.vsExport{width:105px;font-size:12px;padding:9px}.vsContent{flex:1;display:flex;min-height:0}.vsRail{width:76px;background:#103240;display:flex;flex-direction:column;gap:9px;padding:14px 6px;flex-shrink:0}.vsRail button{border:0;color:#daebed;background:transparent;padding:10px 2px;border-radius:10px;font-size:11px;cursor:pointer}.vsRail button b{display:block;font-size:22px;margin-bottom:6px}.vsRail button.active,.vsRail button:hover{background:#205b65}.vsLeft{width:288px;background:#fff;border-right:1px solid #dce6e8;padding:20px;overflow:auto;flex-shrink:0;transition:width .2s,padding .2s}.vsLeft h3{margin:0 0 12px}.vsCollapse{float:right;border:0;background:#e9f3f3;border-radius:7px;padding:6px 10px;cursor:pointer}.vsModels{display:grid;gap:7px;margin:12px 0}.vsModel{display:flex;justify-content:space-between;gap:10px;text-align:left;background:#f8fafb;border:1px solid #d9e4e7;padding:12px;border-radius:10px;cursor:pointer;color:#1b3a46}.vsModel:hover{border-color:#1a9c92;background:#ecfaf7}.vsModel strong{color:#15827b}.vsModel span{flex:1}.vsTree{display:grid;gap:5px}.vsTreeRow{background:white;text-align:left;border:1px solid #e0e8ea;padding:9px;border-radius:8px;cursor:pointer}.vsTreeRow small{float:right;color:#91a2a8}.vsTreeRow.active{background:#def5ef;border-color:#3aab9d}.vsViewport{position:relative;flex:1;min-width:0;overflow:hidden;background:#61737b}.vsViewport canvas{display:block;width:100%;height:100%;touch-action:none}.vsCam,.vsViewTools,.vsBottom{position:absolute;display:flex;gap:5px;padding:5px;background:#ffffffed;border-radius:10px;box-shadow:0 3px 12px #3343}.vsCam{top:14px;left:14px}.vsViewTools{top:14px;right:14px}.vsBottom{bottom:16px;right:16px}.vsCam button,.vsViewTools button,.vsBottom button{border:0;background:white;color:#203b48;padding:10px 12px;border-radius:7px;cursor:pointer;font-weight:650;font-size:12px}.vsCam button:hover,.vsViewTools button:hover,.vsBottom button:hover{background:#def5ef}.vsHelp{position:absolute;bottom:16px;left:12px;background:#14343bd9;color:white;padding:8px 12px;border-radius:8px;font-size:11px;pointer-events:none}.vsRight{width:300px;background:white;border-left:1px solid #dde7e9;padding:20px;overflow:auto;flex-shrink:0;transition:width .2s,padding .2s}.vsRightHead{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e0e8ea;padding-bottom:12px;margin-bottom:15px}.vsFieldGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.vsFieldGrid label{font-size:11px;font-weight:650;color:#70858e}.vsFieldGrid input{margin-top:4px;font-size:13px;padding:7px}.vsRight details{padding:15px 0;border-top:1px solid #e3ebed;margin-top:15px}.vsRight summary{font-weight:700;cursor:pointer}.vsMetric{display:flex;justify-content:space-between;gap:8px;margin:11px 0;font-size:12px}.vsMetric strong{color:#16756c}.vsLeftClosed .vsLeft,.vsRightClosed .vsRight{width:0;padding:0;border:0;overflow:hidden}.vsWorkspace .btn{white-space:nowrap}@media(max-width:1050px){.vsLeft{width:230px}.vsRight{width:255px}.vsHeader{height:auto;min-height:65px}.vsHeadActions{justify-content:flex-end}}@media(max-width:760px){.vsRail{width:52px}.vsRail button{font-size:9px}.vsLogo small{display:none}.vsLeft,.vsRight{position:absolute;z-index:5;top:66px;bottom:0;box-shadow:0 8px 24px #1234}.vsLeft{left:52px}.vsRight{right:0}.vsHeadActions .btn{font-size:10px}.vsHelp{display:none}}`;
 style.textContent+=`
 .vsCadHead h3{margin:0 0 6px}.vsCadTools,.vsCadActions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:12px 0}.vsCadTools label{font-size:12px}.vsCadTools select{width:auto;min-width:105px;padding:7px}.vsCadDrawing{height:min(53vh,460px);background:#eaf0f3;border:1px solid #cddce2;border-radius:12px;overflow:hidden}.vsCadDrawing svg{width:100%;height:100%;touch-action:none}.vsCadStatus{margin:8px 0;padding:9px 12px;border-radius:7px;font-size:12px}.vsCadOk{background:#e9f6f1;color:#146c57}.vsCadError{background:#fff0ed;color:#a13b26}.vsCadTabs{display:grid;grid-template-columns:1fr 1fr;gap:16px}.vsCadTabs h4{margin:5px 0}.vsCadField{display:flex;gap:6px;align-items:center;margin:5px 0}.vsCadField b{width:28px;font-size:11px}.vsCadField label{font-size:10px;color:#667f8a;flex:1}.vsCadField input{width:100%;padding:6px;font-size:12px;border:1px solid #c9dbe1;border-radius:6px}.vsCadField button{background:#fff;border:1px solid #dde6e8;border-radius:6px;cursor:pointer}.modal>div:has(.vsCadDrawing){width:min(1020px,98vw);max-height:94vh}@media(max-width:700px){.vsCadTabs{grid-template-columns:1fr}.vsCadDrawing{height:330px}}
