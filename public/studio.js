@@ -245,7 +245,7 @@ function renderProps(){
  const openingFields=o.kind==='glass'?`<label class="label">Apertura<select class="field" onchange="VS.setOpening('${o.id}','openingType',this.value)"><option value="">Da modello</option>${[['fixed','Fissa'],['swing','Battente'],['slide','Scorrevole']].map(([value,label])=>`<option value="${value}" ${value===o.openingType?'selected':''}>${label}</option>`).join('')}</select></label>
  ${o.openingType==='slide'?`<label class="label">Verso di scorrimento<select class="field" onchange="VS.setOpening('${o.id}','openingSide',Number(this.value))"><option value="-1">Sinistra</option><option value="1" ${o.openingSide===1?'selected':''}>Destra</option></select></label>`:''}`:'';
  const fit=renderMeshes.get(o.id)?.userData.hingeFit;
- const hingeFit=o.accessoryType==='cerniera'&&o.technicalSpec?(fit==='glb'?'Vetro centrato tra le ganasce del GLB.':'Anteprima con ganasce di riferimento.'):'';
+ const hingeFit=o.accessoryType==='cerniera'&&o.technicalSpec?(fit==='glb'?'Modello originale · vetro centrato tra le ganasce.':fit==='glb-review'?'Modello originale · verifica l’allineamento delle ganasce.':'Anteprima con ganasce di riferimento.'):'';
  const mounting=o.technicalSpec?`<p class="small">Regolazione del modello 3D rispetto al fissaggio. Le lavorazioni restano nella posizione quotata.</p>${hingeFit?`<p class="small">${hingeFit}</p>`:''}<div class="vsFieldGrid">${fields([['mountX','Offset modello X (mm)'],['mountY','Offset modello Y (mm)'],['mountZ','Distanza dal vetro (mm)'],['mountSpin','Rotazione GLB sul vetro (°)'],['mountYaw','Rotazione GLB verticale (°)'],['mountScale','Scala GLB (%)']])}</div>`:'';
  el.innerHTML=`<label class="label">Nome<input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"></label>
  <div class="vsFieldGrid">${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
@@ -751,6 +751,37 @@ function cachedHingeSlot(asset,mount,thickness,autoOrient){
  mount.rotation.y=angle;
  return center;
 }
+function gasketHingeSlot(mount,thickness){
+ const Three=T(),pads=[];
+ const axisNames=['x','y','z'];
+ mount.updateMatrixWorld(true);
+ mount.traverse(node=>{
+  if(!node.isMesh||!/tesnenie|gasket|guarnizione/i.test(node.name))return;
+  const box=new Three.Box3().setFromObject(node);
+  pads.push({box,size:box.getSize(new Three.Vector3()),center:box.getCenter(new Three.Vector3())});
+ });
+ if(pads.length!==2)return null;
+ const [a,b]=pads;
+ const normal=axisNames.reduce((best,axis)=>a.size[axis]<a.size[best]?axis:best);
+ const tangents=axisNames.filter(axis=>axis!==normal);
+ if(a.size[normal]>5||b.size[normal]>5||tangents.some(axis=>
+  Math.abs(a.center[axis]-b.center[axis])>1||Math.abs(a.size[axis]-b.size[axis])>2))return null;
+ const vertical=tangents.reduce((best,axis)=>a.size[axis]>a.size[best]?axis:best);
+ const inward=tangents.find(axis=>axis!==vertical);
+ const [rear,front]=a.center[normal]<b.center[normal]?[a,b]:[b,a];
+ const gap=front.box.min[normal]-rear.box.max[normal];
+ if(gap<=0)return null;
+ const midpoint=a.center.clone().lerp(b.center,.5);
+ midpoint[normal]=(front.box.min[normal]+rear.box.max[normal])/2;
+ const assembly=new Three.Box3().setFromObject(mount).getCenter(new Three.Vector3());
+ const x=new Three.Vector3(),y=new Three.Vector3();
+ x[inward]=midpoint[inward]>=assembly[inward]?1:-1;
+ y[vertical]=1;
+ const z=new Three.Vector3().crossVectors(x,y);
+ const rotation=new Three.Matrix4().makeBasis(x,y,z).transpose();
+ mount.quaternion.setFromRotationMatrix(rotation);
+ return {center:midpoint.applyMatrix4(rotation),fits:Math.abs(gap-thickness)<=.5};
+}
 async function loadTechnicalGLB(o,placeholder){
  if(!window.THREE?.GLTFLoader||!V?.studio||!o.technicalId)return;
  const key=o.technicalId;
@@ -772,16 +803,15 @@ async function loadTechnicalGLB(o,placeholder){
   });
   const owner=glassPanels().find(panel=>panel.id===o.attachTo);
   const hinge=o.accessoryType==='cerniera'&&owner;
-  const slot=hinge?cachedHingeSlot(obj,mount,owner.d,!Object.hasOwn(o,'mountYaw')):null;
-  if(hinge&&!slot){
-   mount.traverse(mesh=>{mesh.geometry?.dispose();if(mesh.isMesh)for(const m of Array.isArray(mesh.material)?mesh.material:[mesh.material])m.dispose();});
-   return;
-  }
+  const autoOrient=!Object.hasOwn(o,'mountYaw')&&!Object.hasOwn(o,'mountSpin');
+  const gasket=hinge&&autoOrient?gasketHingeSlot(mount,owner.d):null;
+  const slot=hinge&&!gasket?cachedHingeSlot(obj,mount,owner.d,autoOrient):null;
   const box=new THREE.Box3().setFromObject(mount);
   const edgeMounted=['left','right','top','bottom'].includes(o.mountEdge);
-  const center=slot||(edgeMounted?hardwareContact(mount,box):box.getCenter(new THREE.Vector3()));
-  mount.position.set(-center.x,-center.y,slot?-center.z-owner.d/2:-box.min.z);
-  if(slot)placeholder.userData.hingeFit='glb';
+  const center=gasket?.center||slot||(edgeMounted?hardwareContact(mount,box):box.getCenter(new THREE.Vector3()));
+  const depth=hinge?-center.z-owner.d/2:-box.min.z;
+  mount.position.set(-center.x,-center.y,depth);
+  if(hinge)placeholder.userData.hingeFit=slot||gasket?.fits?'glb':'glb-review';
   const oriented=orientHardware(THREE,o.mountEdge,mount);
   const [dx,dy]=glassContactOffset(o);
   oriented.position.set(dx+N(o.mountX),dy+N(o.mountY),N(o.mountZ));
