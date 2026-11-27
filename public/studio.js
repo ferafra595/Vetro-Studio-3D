@@ -93,13 +93,57 @@ function blank(){remember();model().objects=[];model().studio={category:'libero'
 function refresh(modelChanged=false){if(modelChanged)drawScene();renderSidebar();renderProps();updatePricing();updateTitle();queueAutosave()}
 function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=setTimeout(async()=>{if(U.loading||S.view!=='designer')return;try{U.loading=true;await saveCurrent()}catch(e){console.warn('Autosave:',e)}finally{U.loading=false}},5000)}
 function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p><button class="btn primary" style="width:100%;margin-bottom:10px" onclick="VSTech.picker()">+ Inserisci dalla libreria tecnica</button>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino. Tre finiture moderne, ognuna modificabile.</p><div class="vsModels">${[['concrete','01 · Cemento architettonico'],['stone','02 · Pietra naturale'],['wood','03 · Rovere contemporaneo']].map(([k,l])=>`<button class="vsModel" onclick="VS.finish('${k}')">${l}</button>`).join('')}</div><button class="btn" onclick="VS.applyModernScene()">Applica design moderno all’ambiente</button>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
-function renderProps(){let el=$id('vsProps');if(!el)return;let o=model().objects.find(o=>o.id===U.selected);if(!o){el.innerHTML='<p class="small">Clicca un oggetto nel 3D per modificarlo.</p>';return}const keys=[['x','X'],['y','Y'],['z','Z'],['w','Larghezza'],['h','Altezza'],['d','Spessore / profondità'],['rx','Rotazione X'],['ry','Rotazione Y'],['rz','Rotazione Z']];el.innerHTML=`<strong>${esc(o.name)}</strong><small class="muted"> · ${esc(o.kind)}</small><label class="label">Nome</label><input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"><div class="vsFieldGrid">${keys.map(([k,l])=>`<label>${l}<input class="field" type="number" step="0.1" value="${N(o[k])}" onchange="VS.edit('${o.id}','${k}',this.value)"></label>`).join('')}</div>${['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica</label><select class="field" onchange="VS.finish(this.value)">${[['concrete','Cemento moderno'],['stone','Pietra naturale'],['wood','Rovere contemporaneo']].map(([v,l])=>`<option value="${v}" ${o.finish===v?'selected':''}>${l}</option>`).join('')}</select>`:''}<div class="actions"><button class="btn" onclick="VS.duplicate()">Duplica</button><button class="btn danger" onclick="VS.remove()">Elimina</button>${['glass','mirror'].includes(o.kind)?'<button class="btn" onclick="VS.shapeEditor()">Sagoma 2D</button>':''}</div>`}
+function renderProps(){
+ const el=$id('vsProps');
+ if(!el)return;
+ const o=model().objects.find(object=>object.id===U.selected);
+ if(!o){el.innerHTML='<p class="small">Seleziona un elemento nella scena.</p>';return;}
+ const panel=['glass','mirror'].includes(o.kind);
+ const fields=keys=>keys.map(([key,label])=>`<label>${label}<input class="field" type="number" step="0.1" value="${N(o[key])}" onchange="VS.edit('${o.id}','${key}',this.value)"></label>`).join('');
+ const finishes=['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica
+ <select class="field" onchange="VS.finish(this.value)">${[['concrete','Cemento moderno'],['stone','Pietra naturale'],['wood','Rovere contemporaneo']].map(([value,label])=>`<option value="${value}" ${o.finish===value?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
+ const toolsOpen=el.querySelector('details')?.open;
+ el.innerHTML=`<label class="label">Nome<input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"></label>
+ <div class="vsFieldGrid">${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
+ ${panel?'<div class="actions"><button class="btn primary" onclick="VSTech.picker()">Aggiungi accessorio</button><button class="btn" onclick="VS.shapeEditor()">Sagoma 2D</button></div>':''}
+ <details ${toolsOpen?'open':''}><summary>Strumenti avanzati</summary>
+ <div class="vsFieldGrid">${fields([['x','X (mm)'],['y','Y (mm)'],['z','Z (mm)'],['rx','Rotazione X (°)'],['ry','Rotazione Y (°)'],['rz','Rotazione Z (°)']])}</div>
+ ${finishes}<div class="actions"><button class="btn" onclick="VS.duplicate()">Duplica</button><button class="btn danger" onclick="VS.remove()">Elimina</button></div>
+ </details>`;
+}
 function updateTitle(){let el=$id('vsTitle');if(el)el.textContent=S.current?.title||'Nuovo progetto'}
 function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),material=area*180,accessories=m.objects.filter(o=>o.kind==='accessory').reduce((sum,o)=>sum+N(o.technicalUnitPrice,35),0),cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
 function updatePricing(){let el=$id('vsQuote');if(!el)return;let p=pricingModel();el.innerHTML=`<div class="vsMetric">Vetro <b>${p.area.toFixed(2)} m²</b></div><div class="vsMetric">Materiali <b>${eur(p.material)}</b></div><div class="vsMetric">Accessori <b>${eur(p.accessories)}</b></div><div class="vsMetric">Imponibile <b>${eur(p.net)}</b></div><div class="vsMetric">Totale IVA inclusa <strong>${eur(p.total)}</strong></div><p class="small">Prezzi indicativi: da configurare nei listini della vetreria.</p>`}
-function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';U.undo=[];U.redo=[];U.selected=null}
-function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn primary" onclick="VS.tab('models')">Scegli categoria e modello</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['accessories','⚙','Accessori'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.shapeEditor()" title="Modifica la lastra selezionata in 2D">CAD 2D</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">€ Preventivo</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic + trascina: sposta oggetto · Alt + trascina: ruota vista · Maiusc + trascina: piano XZ · Rotella: zoom</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Preventivo</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}</details><hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></aside></div></div>`}
+let activeProject;
+function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';if(activeProject!==S.current){activeProject=S.current;U.undo=[];U.redo=[];U.selected=null}}
+function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="navigate('cad')">CAD 2D</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn primary" onclick="VS.tab('models')">Scegli categoria e modello</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['accessories','⚙','Accessori'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.shapeEditor()" title="Modifica la lastra selezionata in 2D">Modifica lastra</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">€ Preventivo</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Alt + trascina per ruotare · Rotella per zoomare</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Preventivo</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}</details><hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></aside></div></div>`}
 // Three.js rendering. Single source of truth: model().objects.
+function cadPage(){
+ initProject();
+ const panels=model().objects.filter(o=>['glass','mirror'].includes(o.kind));
+ const active=model().objects.find(o=>o.id===U.selected);
+ const selected=panels.find(o=>o.id===(active?.attachTo||active?.id));
+ return `<div class="panel"><h2>${esc(S.current.title)}</h2>
+ <div class="grid2"><label>Lastra
+ <select id="vsCadPanel" ${panels.length?'':'disabled'}>
+ ${panels.map(o=>`<option value="${esc(o.id)}" ${o.id===selected?.id?'selected':''}>${esc(o.name)} · ${N(o.w)} × ${N(o.h)} mm</option>`).join('')}
+ </select></label></div>
+ <div class="actions">
+ <button class="btn primary" onclick="VS.openCad()" ${panels.length?'':'disabled'}>Apri in 2D</button>
+ <button class="btn" onclick="VS.addCadPanel()">Aggiungi lastra</button>
+ <button class="btn" onclick="navigate('designer')">Apri in 3D</button>
+ <button class="btn" onclick="saveCurrent()">Salva progetto</button>
+ </div></div>`;
+}
+function openCad(){
+ const id=$id('vsCadPanel')?.value;
+ if(id){select(id);window.VSCAD2D.open();}
+}
+function addCadPanel(){
+ add('glass');
+ $id('page').innerHTML=cadPage();
+ openCad();
+}
 let renderMeshes=new Map(),orbit={az:.62,el:.34,dist:5500,target:null},viewMode='real';
 // Shared, cached procedural PBR textures; texture scale is in real millimetres.
 const materialCache=new Map();
@@ -208,7 +252,7 @@ function createMesh(o){
  if(glass&&(o.shape?.length>=3||model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))){const profile=technicalGlassShape(o);let outline=profile.outline;let s=new Three.Shape();s.moveTo(outline[0][0]-o.w/2,outline[0][1]-o.h/2);outline.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of technicalHoles(o)){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}for(const poly of profile.voids){let path=new Three.Path();path.moveTo(poly[0][0]-o.w/2,poly[0][1]-o.h/2);for(const p of poly.slice(1))path.lineTo(p[0]-o.w/2,p[1]-o.h/2);path.closePath();s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
  else geo=new Three.BoxGeometry(Math.max(1,o.w),Math.max(1,o.h),Math.max(1,o.d));
  let material;
- if(glass){material=new Three.MeshPhysicalMaterial({color:o.kind==='mirror'?0xa8bec8:0xc4eaf0,metalness:o.kind==='mirror'?.78:0,roughness:o.kind==='mirror'?.08:.065,transmission:o.kind==='mirror'?0:.55,transparent:o.kind!=='mirror',opacity:1,ior:1.48,thickness:Math.max(1,o.d),side:Three.DoubleSide,clearcoat:1,clearcoatRoughness:.04,depthWrite:true});
+ if(glass){material=new Three.MeshPhysicalMaterial({color:o.kind==='mirror'?0xdde6e8:0xb5dfd8,metalness:o.kind==='mirror'?1:0,roughness:o.kind==='mirror'?.095:.045,transmission:o.kind==='mirror'?0:.96,transparent:false,opacity:1,ior:1.5,thickness:Math.max(1,o.d),side:Three.FrontSide,envMapIntensity:1.15,depthWrite:true});
   if(viewMode==='technical'){material.transmission=0;material.transparent=true;material.opacity=.55;material.depthWrite=false}
  }else if(building){
   const source=makeSurfaceTexture(Three,o.finish||'concrete');const surface=o.finish||'concrete';
@@ -216,7 +260,7 @@ function createMesh(o){
   material=[makeFace(o.d,o.h),makeFace(o.d,o.h),makeFace(o.w,o.d),makeFace(o.w,o.d),makeFace(o.w,o.h),makeFace(o.w,o.h)];
  }else material=new Three.MeshStandardMaterial({color:o.accessoryType==='borchia'?0x647275:0x323d42,metalness:.83,roughness:.24});
  const mesh=new Three.Mesh(geo,material);mesh.position.set(N(o.x),N(o.y),N(o.z));mesh.rotation.set(N(o.rx)*Math.PI/180,N(o.ry)*Math.PI/180,N(o.rz)*Math.PI/180);mesh.castShadow=!glass;mesh.receiveShadow=true;mesh.userData.studioId=o.id;
- if(glass){const edges=new Three.LineSegments(new Three.EdgesGeometry(geo,12),new Three.LineBasicMaterial({color:viewMode==='technical'?0x217fa1:0x4b8791,transparent:true,opacity:viewMode==='technical'?1:.9,depthTest:true}));mesh.add(edges)}
+ if(glass){const edges=new Three.LineSegments(new Three.EdgesGeometry(geo,12),new Three.LineBasicMaterial({color:viewMode==='technical'?0x217fa1:0x245c58,transparent:true,opacity:viewMode==='technical'?1:.7,depthTest:true}));mesh.add(edges)}
  if(o.kind==='stair'){
    const nose=new Three.Mesh(new Three.BoxGeometry(Math.max(20,o.w),7,9),new Three.MeshStandardMaterial({color:0x8a7766,roughness:.5}));nose.position.set(0,o.h/2-7,o.d/2-9);mesh.add(nose);
  }
@@ -246,15 +290,147 @@ async function loadTechnicalGLB(o,placeholder){
  try{
   if(!techGLBCache.has(key))techGLBCache.set(key,(async()=>{const r=await fetch('/api/technical-accessories/'+key+'/files/glb',{credentials:'same-origin'});if(!r.ok)return null;const bytes=await r.arrayBuffer();return await new Promise((resolve,reject)=>new THREE.GLTFLoader().parse(bytes,'',v=>resolve(v.scene),reject))})());
   const obj=await techGLBCache.get(key);if(!obj||!placeholder.parent||!V?.studio)return;
-  const child=obj.clone(true);const box=new THREE.Box3().setFromObject(child);const center=box.getCenter(new THREE.Vector3());child.position.sub(center);
-  placeholder.clear();placeholder.add(child);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});
+  const child=obj.clone(true);
+  child.traverse(mesh=>{
+   if(!mesh.isMesh)return;
+   mesh.geometry=mesh.geometry.clone();
+   mesh.material=Array.isArray(mesh.material)?mesh.material.map(m=>m.clone()):mesh.material.clone();
+   mesh.userData.sharedStudioMaps=true;
+   mesh.castShadow=true;
+   mesh.receiveShadow=true;
+  });const box=new THREE.Box3().setFromObject(child);const center=box.getCenter(new THREE.Vector3());child.position.sub(center);
+  placeholder.clear();placeholder.add(child);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});highlight();
  }catch(e){console.warn('GLB accessorio non disponibile:',e)}
 }
-function drawScene(){if(!V?.studio)return;const group=V.group;for(const child of [...group.children]){group.remove(child);child.traverse(n=>{n.geometry?.dispose();if(n.material){let mats=Array.isArray(n.material)?n.material:[n.material];mats.forEach(x=>{if(x.map&&x.map!==materialCache.get(x.userData?.surface))x.map.dispose();x.dispose()})}})}renderMeshes.clear();for(const o of model().objects){if(o.technicalSpec)linkedAccessoryPosition(o);let mesh=createMesh(o);group.add(mesh);renderMeshes.set(o.id,mesh);if(o.technicalId)loadTechnicalGLB(o,mesh)}highlight()}
+function disposeModel(group){
+ for(const child of [...group.children]){
+  group.remove(child);
+  child.traverse(node=>{
+   node.geometry?.dispose();
+   const materials=Array.isArray(node.material)?node.material:[node.material];
+   for(const material of materials){
+    if(!material)continue;
+    if(material.map&&!node.userData.sharedStudioMaps&&material.map!==materialCache.get(material.userData?.surface))material.map.dispose();
+    material.dispose();
+   }
+  });
+ }
+ renderMeshes.clear();
+}
+function drawScene(){if(!V?.studio)return;const group=V.group;disposeModel(group);for(const o of model().objects){if(o.technicalSpec)linkedAccessoryPosition(o);let mesh=createMesh(o);group.add(mesh);renderMeshes.set(o.id,mesh);if(o.technicalId)loadTechnicalGLB(o,mesh)}highlight()}
 function highlight(){for(const [id,node] of renderMeshes){node.traverse(v=>{if(v.isMesh&&v.material?.emissive){v.material.emissive.setHex(id===U.selected?0x13798b:0);v.material.emissiveIntensity=id===U.selected?.24:0}})}}
 function positionCamera(){if(!V?.studio)return;const target=orbit.target||new (T().Vector3)(0,1000,0);let camera=V.camera;camera.position.set(target.x+orbit.dist*Math.sin(orbit.az)*Math.cos(orbit.el),target.y+orbit.dist*Math.sin(orbit.el),target.z+orbit.dist*Math.cos(orbit.az)*Math.cos(orbit.el));camera.lookAt(target)}
-function frameModel(){if(!V?.studio)return;const bounds=new (T().Box3)();V.group.updateMatrixWorld(true);V.group.traverse(o=>{if(o.isMesh&&o.geometry){o.geometry.computeBoundingBox();bounds.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld))}});if(bounds.isEmpty())return;orbit.target=bounds.getCenter(new (T().Vector3)());let size=bounds.getSize(new (T().Vector3)()),max=Math.max(size.x,size.y,size.z,550),fov=V.camera.fov*Math.PI/180;orbit.dist=Math.min(55000,Math.max(800,max/(2*Math.tan(fov/2))*1.55));positionCamera()}
-function initStudio(){if(!T())return toast('Three.js non caricato');let canvas=$id('canvas3d');if(!canvas)return;if(V?.renderer){V.renderer.dispose();V=null}let Three=T(),renderer=new Three.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=Three.PCFSoftShadowMap;renderer.outputEncoding=Three.sRGBEncoding;renderer.toneMapping=Three.ACESFilmicToneMapping;renderer.toneMappingExposure=0.95;const scene=new Three.Scene();scene.background=new Three.Color('#61737b');let camera=new Three.PerspectiveCamera(44,1,1,200000);scene.add(new Three.HemisphereLight(0xdceaf1,0x425057,1.3));let sun=new Three.DirectionalLight(0xfff3e7,2.0);sun.position.set(4500,8000,3800);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-10000;sun.shadow.camera.right=10000;sun.shadow.camera.top=10000;sun.shadow.camera.bottom=-10000;scene.add(sun);const group=new Three.Group();scene.add(group);V={studio:true,renderer,scene,camera,group};U.cat=model().studio.category in catalog?model().studio.category:'doccia';renderSidebar();renderProps();updatePricing();drawScene();frameModel();const ray=new Three.Raycaster(),mouse=new Three.Vector2();let drag=null;
+function frameModel(){
+ if(!V?.studio)return;
+ const Three=T(),bounds=new Three.Box3().setFromObject(V.group);
+ if(bounds.isEmpty())return;
+ orbit.target=bounds.getCenter(new Three.Vector3());
+ const sphere=bounds.getBoundingSphere(new Three.Sphere());
+ const vertical=Three.MathUtils.degToRad(V.camera.fov/2);
+ const horizontal=Math.atan(Math.tan(vertical)*Math.max(.15,V.camera.aspect));
+ orbit.dist=Math.max(600,sphere.radius/Math.sin(Math.min(vertical,horizontal))*1.12);
+ const span=Math.max(sphere.radius,750);
+ V.floor.position.set(orbit.target.x,bounds.min.y-.5,orbit.target.z);
+ V.floor.scale.setScalar(Math.max(span*30,30000));
+ V.backdrop.position.set(orbit.target.x,bounds.min.y+span*3,orbit.target.z-span*3);
+ V.backdrop.scale.set(12*span,6*span,1);
+ V.sun.target.position.copy(orbit.target);
+ V.sun.position.copy(orbit.target).add(new Three.Vector3(1.5,2.4,1.2).multiplyScalar(span));
+ Object.assign(V.sun.shadow.camera,{left:-span*1.5,right:span*1.5,top:span*1.5,bottom:-span*1.5,far:span*7});
+ V.sun.shadow.camera.updateProjectionMatrix();
+ positionCamera();
+}
+function disposeStudio(){
+ if(!V?.studio)return;
+ disposeModel(V.group);
+ V.environment.dispose();
+ V.floor.geometry.dispose();
+ V.floor.material.dispose();
+ V.backdrop.geometry.dispose();
+ V.backdrop.material.map.dispose();
+ V.backdrop.material.dispose();
+ V.sun.shadow.map?.dispose();
+ V.renderer.dispose();
+ renderMeshes.clear();
+ V=null;
+}
+function studioEnvironment(renderer,Three){
+ const scene=new Three.Scene();
+ scene.background=new Three.Color(0xc4cbd0);
+ const panels=[
+  {size:[4,6],position:[-4,2,3],intensity:3.3},
+  {size:[2.6,5],position:[4,1,-3],intensity:2.2},
+  {size:[5,3],position:[0,5,0],intensity:2.8},
+  {size:[2,3],position:[2,1,5],intensity:1.25},
+ ];
+ for(const {size,position,intensity} of panels){
+  const panel=new Three.Mesh(new Three.PlaneGeometry(...size),new Three.MeshBasicMaterial({color:new Three.Color(intensity,intensity,intensity)}));
+  panel.position.set(...position);
+  panel.lookAt(0,0,0);
+  scene.add(panel);
+ }
+ const generator=new Three.PMREMGenerator(renderer);
+ const environment=generator.fromScene(scene,.05);
+ generator.dispose();
+ for(const panel of scene.children){panel.geometry.dispose();panel.material.dispose();}
+ return environment;
+}
+function studioBackdrop(Three){
+ const canvas=document.createElement('canvas');
+ canvas.width=canvas.height=256;
+ const ctx=canvas.getContext('2d');
+ const base=ctx.createLinearGradient(0,230,255,35);
+ base.addColorStop(0,'#a1adb6');
+ base.addColorStop(1,'#e6e8e6');
+ ctx.fillStyle=base;
+ ctx.fillRect(0,0,256,256);
+ const windowLight=ctx.createRadialGradient(137,130,5,137,130,90);
+ windowLight.addColorStop(0,'rgba(255,250,233,0.6)');
+ windowLight.addColorStop(1,'rgba(255,250,233,0)');
+ ctx.fillStyle=windowLight;
+ ctx.fillRect(0,0,256,256);
+ const map=new Three.CanvasTexture(canvas);
+ map.encoding=Three.sRGBEncoding;
+ return new Three.Mesh(new Three.PlaneGeometry(1,1),new Three.MeshBasicMaterial({map}));
+}
+function initStudio(){
+ if(!T())return toast('Three.js non caricato');
+ const canvas=$id('canvas3d');
+ if(!canvas)return;
+ disposeStudio();
+ const Three=T();
+ const renderer=new Three.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
+ renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+ renderer.shadowMap.enabled=true;
+ renderer.shadowMap.type=Three.PCFSoftShadowMap;
+ renderer.outputEncoding=Three.sRGBEncoding;
+ renderer.toneMapping=Three.ACESFilmicToneMapping;
+ renderer.toneMappingExposure=.9;
+ const scene=new Three.Scene();
+ scene.background=new Three.Color('#dce3e7');
+ const environment=studioEnvironment(renderer,Three);
+ scene.environment=environment.texture;
+ const camera=new Three.PerspectiveCamera(38,canvas.clientWidth/Math.max(1,canvas.clientHeight),1,200000);
+ scene.add(new Three.HemisphereLight(0xf5fbff,0xb5b6b1,.7));
+ const sun=new Three.DirectionalLight(0xfff6ec,1.15);
+ sun.position.set(3200,5200,2500);
+ sun.castShadow=true;
+ sun.shadow.mapSize.set(2048,2048);
+ sun.shadow.normalBias=2;
+ sun.shadow.radius=3;
+ scene.add(sun,sun.target);
+ const floor=new Three.Mesh(new Three.PlaneGeometry(1,1),new Three.MeshStandardMaterial({color:0xa6b0b6,roughness:.64,envMapIntensity:.32}));
+ floor.rotation.x=-Math.PI/2;
+ floor.receiveShadow=true;
+ scene.add(floor);
+ const backdrop=studioBackdrop(Three);
+ scene.add(backdrop);
+ const group=new Three.Group();
+ scene.add(group);
+ V={studio:true,renderer,scene,camera,group,environment,floor,backdrop,sun};
+ U.cat=model().studio.category in catalog?model().studio.category:'doccia';
+ renderSidebar();renderProps();updatePricing();drawScene();frameModel();
+ const ray=new Three.Raycaster(),mouse=new Three.Vector2();let drag=null;
  function pick(event){let rect=canvas.getBoundingClientRect();mouse.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);ray.setFromCamera(mouse,camera);let hits=ray.intersectObjects(group.children,true);const obj=hits.find(h=>h.object.userData?.studioId||h.object.parent?.userData?.studioId);return obj?.object.userData.studioId||obj?.object.parent?.userData.studioId||null}
  // Drag diretto: oggetto con clic, Alt+drag orbita; Shift+drag sposta sul piano XZ.
  const worldScale=()=>2*orbit.dist*Math.tan(camera.fov*Math.PI/360)/Math.max(250,canvas.clientHeight);
@@ -374,7 +550,7 @@ window.VSCADBridge={
  else delete o.cadProfile;
  refresh(true);return {ok:true};},
 };
-window.VS={choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
+window.VS={cadPage,openCad,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
 // Existing SaaS remains untouched. Only the old editor entrypoints are replaced.
 designer=designerHTML;init3d=initStudio;rebuild3d=drawScene;camPreset=cameraPreset;calc=pricingModel;
 exportDXF=function(panelId){
@@ -437,5 +613,5 @@ style.textContent+=`
 .vsCadHead h3{margin:0 0 6px}.vsCadTools,.vsCadActions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:12px 0}.vsCadTools label{font-size:12px}.vsCadTools select{width:auto;min-width:105px;padding:7px}.vsCadDrawing{height:min(53vh,460px);background:#eaf0f3;border:1px solid #cddce2;border-radius:12px;overflow:hidden}.vsCadDrawing svg{width:100%;height:100%;touch-action:none}.vsCadStatus{margin:8px 0;padding:9px 12px;border-radius:7px;font-size:12px}.vsCadOk{background:#e9f6f1;color:#146c57}.vsCadError{background:#fff0ed;color:#a13b26}.vsCadTabs{display:grid;grid-template-columns:1fr 1fr;gap:16px}.vsCadTabs h4{margin:5px 0}.vsCadField{display:flex;gap:6px;align-items:center;margin:5px 0}.vsCadField b{width:28px;font-size:11px}.vsCadField label{font-size:10px;color:#667f8a;flex:1}.vsCadField input{width:100%;padding:6px;font-size:12px;border:1px solid #c9dbe1;border-radius:6px}.vsCadField button{background:#fff;border:1px solid #dde6e8;border-radius:6px;cursor:pointer}.modal>div:has(.vsCadDrawing){width:min(1020px,98vw);max-height:94vh}@media(max-width:700px){.vsCadTabs{grid-template-columns:1fr}.vsCadDrawing{height:330px}}
 `;
 document.head.append(style);
-document.addEventListener('keydown',e=>{if(!document.body.classList.contains('vsActive'))return;if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if(e.key==='Delete'&&U.selected){e.preventDefault();remove()}});const oldNavigate=navigate;navigate=function(v){if(v!=='designer')document.body.classList.remove('vsActive');else document.body.classList.add('vsActive');return oldNavigate(v)};
+document.addEventListener('keydown',e=>{if(!document.body.classList.contains('vsActive'))return;if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();redo()}else if(e.key==='Delete'&&U.selected){e.preventDefault();remove()}});const oldNavigate=navigate;navigate=function(v){if(v!=='designer'){document.body.classList.remove('vsActive');disposeStudio();}else document.body.classList.add('vsActive');return oldNavigate(v)};
 })();
