@@ -113,7 +113,7 @@ function buildShower(add,[code,,layout,mechanism,width=1200,depth=900,returns]){
   return add('glass',name,frame.x+x,h/2,frame.z+z,length,h,glass,{ry:frame.ry,...options});
  }
  function handle(leaf,along){
-  const [x,,z]=panelVector(leaf,along,0,leaf.interiorTrack?-19:19);
+  const [x,,z]=panelVector(leaf,along,0,0);
   add('accessory','Maniglia',leaf.x+x,1050,leaf.z+z,28,190,38,{ry:leaf.ry,accessoryType:'maniglia',attachTo:leaf.id});
  }
  function rail(frame){
@@ -196,13 +196,15 @@ function renderProps(){
  <select class="field" onchange="VS.finish(this.value)">${architecturalFinishes.map(([value,label])=>`<option value="${value}" ${o.finish===value?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
  const toolsOpen=el.querySelector('details')?.open;
  const motion=panel?doorOpening(o):null;
+ const hingeSide=motion?.type==='swing'?`<label class="label">Lato cerniere<select class="field" onchange="VS.setHingeSide('${o.id}',Number(this.value))">
+ <option value="-1" ${motion.side===-1?'selected':''}>Sinistra</option><option value="1" ${motion.side===1?'selected':''}>Destra</option></select></label>`:'';
  const motionControls=motion?`<button class="btn" onclick="VS.toggleDoor('${o.id}')">${doorPreviews.get(o.id)?.target?'Chiudi anta':'Apri anta'}</button>`:'';
  const openingFields=o.kind==='glass'?`<label class="label">Apertura<select class="field" onchange="VS.setOpening('${o.id}','openingType',this.value)"><option value="">Da modello</option>${[['fixed','Fissa'],['swing','Battente'],['slide','Scorrevole']].map(([value,label])=>`<option value="${value}" ${value===o.openingType?'selected':''}>${label}</option>`).join('')}</select></label>
- ${['swing','slide'].includes(o.openingType)?`<label class="label">${o.openingType==='swing'?'Lato cerniere':'Verso di scorrimento'}<select class="field" onchange="VS.setOpening('${o.id}','openingSide',Number(this.value))"><option value="-1">Sinistra</option><option value="1" ${o.openingSide===1?'selected':''}>Destra</option></select></label>`:''}`:'';
+ ${o.openingType==='slide'?`<label class="label">Verso di scorrimento<select class="field" onchange="VS.setOpening('${o.id}','openingSide',Number(this.value))"><option value="-1">Sinistra</option><option value="1" ${o.openingSide===1?'selected':''}>Destra</option></select></label>`:''}`:'';
  const mounting=o.technicalSpec?`<p class="small">Regolazione del modello 3D rispetto al fissaggio. Le lavorazioni restano nella posizione quotata.</p><div class="vsFieldGrid">${fields([['mountX','Offset modello X (mm)'],['mountY','Offset modello Y (mm)'],['mountZ','Distanza dal vetro (mm)'],['mountSpin','Rotazione GLB sul vetro (°)'],['mountYaw','Rotazione GLB verticale (°)'],['mountScale','Scala GLB (%)']])}</div>`:'';
  el.innerHTML=`<label class="label">Nome<input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"></label>
  <div class="vsFieldGrid">${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
- ${motionControls}
+ ${hingeSide}${motionControls}
  ${panel?'<div class="actions"><button class="btn primary" onclick="VSTech.picker()">Aggiungi accessorio</button><button class="btn" onclick="VS.shapeEditor()">Sagoma 2D</button></div>':''}
  <details ${toolsOpen?'open':''}><summary>Strumenti avanzati</summary>
  <div class="vsFieldGrid">${fields([['x','X (mm)'],['y','Y (mm)'],['z','Z (mm)'],['rx','Rotazione X (°)'],['ry','Rotazione Y (°)'],['rz','Rotazione Z (°)']])}</div>
@@ -515,8 +517,23 @@ function createMesh(o){
      let cap=add(new Three.CylinderGeometry(14,14,12,32),0,0,11);cap.rotation.x=Math.PI/2;
      let screw=add(new Three.CylinderGeometry(4,4,1,16),0,0,18);screw.rotation.x=Math.PI/2;
    }else if(type==='maniglia'){
-     const len=Math.max(130,o.h||220);add(new Three.CylinderGeometry(10,10,len,20),0,0,28);
-     for(const py of [-len*.35,len*.35]){const st=add(new Three.CylinderGeometry(7,7,36,16),0,py,11);st.rotation.x=Math.PI/2;add(new Three.CylinderGeometry(12,12,5,20),0,py,-7).rotation.x=Math.PI/2}
+     const owner=standardShowerHandleOwner(o);
+     const length=Math.max(130,o.h||220);
+     if(owner){
+      const face=owner.d/2,grip=face+27;
+      add(new Three.CylinderGeometry(9,9,length,28),0,0,grip);
+      for(const y of [-length*.35,length*.35]){
+       add(new Three.CylinderGeometry(6,6,grip+face,20),0,y,(grip-face)/2).rotation.x=Math.PI/2;
+       add(new Three.CylinderGeometry(11,11,4,24),0,y,face+2).rotation.x=Math.PI/2;
+       add(new Three.CylinderGeometry(10,10,4,24),0,y,-face-2).rotation.x=Math.PI/2;
+      }
+     }else{
+      add(new Three.CylinderGeometry(10,10,length,20),0,0,28);
+      for(const y of [-length*.35,length*.35]){
+       add(new Three.CylinderGeometry(7,7,36,16),0,y,11).rotation.x=Math.PI/2;
+       add(new Three.CylinderGeometry(12,12,5,20),0,y,-7).rotation.x=Math.PI/2;
+      }
+     }
    }else if(type==='cerniera'){
      add(new Three.BoxGeometry(35,70,9),-24,0,0);add(new Three.BoxGeometry(35,70,9),24,0,0);add(new Three.CylinderGeometry(6,6,76,20),0,0,9);
    }else if(type==='barra'){add(new Three.CylinderGeometry(10,10,Math.max(o.w,200),24),0,0,0).rotation.z=Math.PI/2;}
@@ -596,6 +613,19 @@ function closedTrackOffset(object){
 const slideLimits=new Map(),hingePlates=new Map();
 function legacyHandle(o,panel){
  return ['D02','D03','D04','D05'].includes(model().studio.template)&&o.kind==='accessory'&&o.name==='Maniglia'&&!o.attachTo&&Math.abs(o.x-panel.x)<panel.w/2;
+}
+function standardShowerHandleOwner(o){
+ if(o.accessoryType!=='maniglia'||o.technicalSpec||model().studio.category!=='doccia')return null;
+ return glassPanels().find(panel=>panel.id===o.attachTo||legacyHandle(o,panel));
+}
+function seatShowerHandle(o){
+ const owner=standardShowerHandleOwner(o);
+ if(!owner)return;
+ const [x,y]=panelVector(owner,o.x-owner.x,o.y-owner.y,o.z-owner.z,true);
+ const maxX=Math.max(0,owner.w/2-13),maxY=Math.max(0,owner.h/2-Math.max(130,o.h||220)/2);
+ const [px,py,pz]=panelVector(owner,Math.max(-maxX,Math.min(maxX,x)),Math.max(-maxY,Math.min(maxY,y)),0);
+ o.x=mm(owner.x+px);o.y=mm(owner.y+py);o.z=mm(owner.z+pz);
+ o.rx=N(owner.rx);o.ry=N(owner.ry);o.rz=N(owner.rz);
 }
 function doorParts(panel){
  return model().objects.filter(o=>o.id===panel.id||o.attachTo===panel.id||legacyHandle(o,panel));
@@ -708,6 +738,7 @@ function drawScene(){
  const objects=model().objects;
  for(const o of objects){
   if(o.technicalSpec)linkedAccessoryPosition(o);
+  if(o.accessoryType==='maniglia')seatShowerHandle(o);
   const mesh=createMesh(o);
   mesh.position.z+=closedTrackOffset(o);
   group.add(mesh);renderMeshes.set(o.id,mesh);
@@ -731,9 +762,9 @@ function doorOpening(panel){
  const door=panel.name?.startsWith('Anta');
  if(!door)return null;
  if(category==='doccia'&&['D02','D03','D04','D05'].includes(template))
-  return {type:['D02','D04'].includes(template)?'slide':'swing',side:1};
+  return {type:['D02','D04'].includes(template)?'slide':'swing',side:panel.openingSide??1};
  if(category==='porta'&&['O01','O02','O03','O04'].includes(template))
-  return {type:['O03','O04'].includes(template)?'slide':'swing',side:['O02','O04'].includes(template)&&panel.x>0?1:-1};
+  return {type:['O03','O04'].includes(template)?'slide':'swing',side:panel.openingSide??(['O02','O04'].includes(template)&&panel.x>0?1:-1)};
  return null;
 }
 function toggleDoor(id){
@@ -745,6 +776,38 @@ function toggleDoor(id){
  preview.target=preview.target?0:1;
  doorPreviews.set(id,preview);
  renderProps();
+}
+function setHingeSide(id,side){
+ const panel=glassPanels().find(o=>o.id===id);
+ const opening=panel&&doorOpening(panel);
+ if(opening?.type!=='swing'||![-1,1].includes(side)||side===opening.side)return;
+ const hardware=doorParts(panel).filter(o=>o.id!==id&&['cerniera','maniglia'].includes(o.accessoryType));
+ const before=hardware.map(o=>structuredClone(o));
+ for(const o of hardware){
+  if(o.technicalSpec){
+   o.localX=mm(panel.w-o.localX);
+   o.technicalSpec=orientTechnicalItem({cut_spec:o.technicalSpec},'right').cut_spec;
+   o.mountEdge=o.mountEdge==='right'?'left':'right';
+   o.mountX=-N(o.mountX);
+   linkedAccessoryPosition(o);
+  }else{
+   const [x,y,z]=panelVector(panel,o.x-panel.x,o.y-panel.y,o.z-panel.z,true);
+   const [dx,dy,dz]=panelVector(panel,-x,y,z);
+   o.x=mm(panel.x+dx);o.y=mm(panel.y+dy);o.z=mm(panel.z+dz);
+  }
+ }
+ const conflict=hardware.find(o=>o.technicalSpec&&technicalPatternValid(panel,o.technicalSpec,o.localX,o.localY,o.id));
+ const after=hardware.map(o=>structuredClone(o));
+ hardware.forEach((o,i)=>{for(const key of Object.keys(o))if(!Object.hasOwn(before[i],key))delete o[key];Object.assign(o,before[i]);});
+ if(conflict){
+  renderProps();
+  return toast('Cambio lato bloccato: le lavorazioni della ferramenta specchiata entrano in conflitto');
+ }
+ remember();
+ hardware.forEach((o,i)=>Object.assign(o,after[i]));
+ panel.openingSide=side;
+ doorPreviews.delete(id);
+ refresh(true);
 }
 function setOpening(id,key,value){
  const panel=model().objects.find(o=>o.id===id&&o.kind==='glass');
@@ -1050,7 +1113,7 @@ window.VSCADBridge={
  else delete o.cadProfile;
  refresh(true);return {ok:true};},
 };
-window.VS={toggleDoor,setOpening,cadPage,openCad,show3D,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
+window.VS={toggleDoor,setHingeSide,setOpening,cadPage,openCad,show3D,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
 // Existing SaaS remains untouched. Only the old editor entrypoints are replaced.
 designer=designerHTML;init3d=initStudio;rebuild3d=drawScene;camPreset=cameraPreset;calc=pricingModel;
 exportDXF=function(panelId){
