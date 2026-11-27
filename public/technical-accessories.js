@@ -249,14 +249,15 @@ function parseDXF(input){const raw=input.replace(/\r/g,'').split('\n'),pairs=[];
  const coords=[...holes.map(h=>[h.x,h.y]),...cutouts.flat()],cx=(Math.min(...coords.map(q=>q[0]))+Math.max(...coords.map(q=>q[0])))/2,cy=(Math.min(...coords.map(q=>q[1]))+Math.max(...coords.map(q=>q[1])))/2;
  return {holes:holes.map(h=>({...h,x:Math.round((h.x-cx)*100)/100,y:Math.round((h.y-cy)*100)/100})),cutouts:cutouts.map(poly=>poly.map(p=>[+(p[0]-cx).toFixed(2),+(p[1]-cy).toFixed(2)])),origin:[cx,cy],ignored};}
 async function extractDXF(){try{const r=await fetch('/api/technical-accessories/'+S.selected.id+'/files/dxf',{credentials:'same-origin'});if(!r.ok)throw Error('Carica prima un file DXF ASCII');const txt=await r.text();const result=parseDXF(txt);if(!confirm(`Riconosciuti ${result.holes.length} fori e ${result.cutouts.length} contorni chiusi. Entità ignorate: ${result.ignored.length}. Sostituire le lavorazioni attuali?`))return;S.cuts={holes:result.holes,cutouts:result.cutouts,origin:result.origin};detail();notify('Geometrie importate: verifica le quote e approva la scheda.')}catch(e){notify(e.message)}}
-let pickerItem=null,pickerQueue=[],pickerOwnerId=null,pickerContext=null;
+let pickerItem=null,pickerQueue=[],pickerOwnerId=null,pickerContext=null,autoEdge='left';
 function renderPicker(items){
  return `<div class="techPlacement"><h3>Posiziona accessorio</h3>
  <label class="label" for="pickTech">Accessorio approvato</label>
  <select class="field" id="pickTech" onchange="VSTech.updatePicker()">${items.map(t=>`<option value="${E(t.id)}">${E(t.code)} · ${E(t.name)}</option>`).join('')}</select>
  <div class="grid2"><label>X dal bordo sinistro (mm)<input class="field" type="number" step="any" id="pickX" oninput="VSTech.previewPlacement()"></label>
  <label>Y dal bordo inferiore (mm)<input class="field" type="number" step="any" id="pickY" oninput="VSTech.previewPlacement()"></label></div>
- <label class="small" id="pickSnapLabel" hidden><input id="pickSnap" type="checkbox" onchange="VSTech.previewPlacement()"> Aggancia lo scasso al bordo sinistro</label>
+ <label class="label" for="pickEdge">Aggancio</label><select class="field" id="pickEdge" onchange="VSTech.previewPlacement()">
+ <option value="free">Libero</option><option value="auto">Bordo più vicino</option><option value="left">Sinistro</option><option value="right">Destro</option><option value="bottom">Inferiore</option><option value="top">Superiore</option></select>
  <p class="small">Clicca sulla lastra per impostare la posizione oppure inserisci le quote.</p>
  <svg id="pickDrawing" width="100%" height="190" role="img" aria-label="Anteprima 2D della lastra e delle lavorazioni" onclick="VSTech.pickPoint(event)"></svg>
  <p id="pickNotchHint" class="small" role="status" aria-live="polite"></p>
@@ -274,6 +275,7 @@ async function picker(beforeOpen,onDone){
   if(!compatible.length)return notify('Nessun accessorio approvato compatibile con lo spessore della lastra');
   if(typeof beforeOpen==='function'&&beforeOpen()===false)return;
   pickerItem=null;
+  autoEdge='left';
   pickerQueue=[];
   pickerOwnerId=owner.id;
   pickerContext=onDone;
@@ -293,23 +295,32 @@ async function updatePicker(){
   const {item}=await request('/technical-accessories/'+encodeURIComponent(id));
   if($('pickTech')!==select||select.value!==id)return;
   pickerItem={...item,cut_spec:safeJson(item.cut_spec)};
-  $('pickSnap').checked=Boolean(pickerItem.cut_spec.edgeNotch&&pickerItem.cut_spec.cutouts?.[0]?.length);
+  $('pickEdge').value=pickerItem.cut_spec.edgeNotch?'auto':'free';
   previewPlacement();
  }catch(e){if($('pickTech')===select&&select.value===id)$('pickNotchHint').textContent=e.message}
 }
 function previewPlacement(){
- const owner=window.VSCADBridge.selected(),spec=pickerItem?.cut_spec,svg=$('pickDrawing');
+ const owner=window.VSCADBridge.selected(),svg=$('pickDrawing');
  if(!svg)return null;
  const status=$('pickNotchHint'),apply=$('pickApply'),add=$('pickAdd');
  apply.disabled=add.disabled=true;
  if(owner?.id!==pickerOwnerId){status.textContent='Seleziona la lastra iniziale';return null}
- const snap=$('pickSnap'),inputX=$('pickX');
- $('pickSnapLabel').hidden=!(spec?.edgeNotch&&spec.cutouts?.[0]?.length);
- inputX.readOnly=!$('pickSnapLabel').hidden&&snap.checked;
- if(inputX.readOnly)inputX.value=-Math.min(...spec.cutouts[0].map(p=>Number(p[0])));
- const x=inputX.valueAsNumber,y=$('pickY').valueAsNumber;
+ const mode=$('pickEdge').value,edge=mode==='auto'?autoEdge:mode;
+ const item=pickerItem?window.VSTechBridge.orient(pickerItem,edge):null;
+ const spec=item?.cut_spec,inputX=$('pickX'),inputY=$('pickY');
+ const horizontal=edge==='left'||edge==='right',vertical=edge==='bottom'||edge==='top';
+ inputX.readOnly=horizontal;
+ inputY.readOnly=vertical;
+ const cutPoints=spec?.cutouts?.flat()||[];
+ const coordinates=cutPoints.map(p=>p[horizontal?0:1]);
+ const far=edge==='right'||edge==='top';
+ if(horizontal||vertical){
+  const extent=coordinates.length?(far?Math.max(...coordinates):Math.min(...coordinates)):0;
+  (horizontal?inputX:inputY).value=(far?(horizontal?owner.w:owner.h):0)-extent;
+ }
+ const x=inputX.valueAsNumber,y=inputY.valueAsNumber;
  const positioned=Number.isFinite(x)&&Number.isFinite(y);
- const candidate=pickerItem&&positioned?{item:pickerItem,x,y}:null;
+ const candidate=item&&positioned?{item,x,y}:null;
  const result=candidate?window.VSTechBridge.validateBatch([...pickerQueue,candidate]):null;
  const margin=Math.max(owner.w,owner.h)*.08;
  svg.setAttribute('viewBox',[-margin,-owner.h-margin,owner.w+2*margin,owner.h+2*margin].join(' '));
@@ -338,15 +349,20 @@ function previewPlacement(){
  apply.disabled=!pickerQueue.length&&!result?.ok;
  apply.textContent=pickerQueue.length?`Applica lista (${pickerQueue.length})`:'Applica accessorio';
  $('pickQueue').innerHTML=pickerQueue.length?`<ol>${pickerQueue.map(({item,x,y},index)=>`<li>${E(item.name)} · X ${x.toFixed(1)}, Y ${y.toFixed(1)} mm <button class="btn" onclick="VSTech.removePlacement(${index})" aria-label="Rimuovi posizione ${index+1}">Rimuovi</button></li>`).join('')}</ol>`:'';
- status.textContent=result?.ok?'Posizione valida.':result?.error||(spec?'Inserisci entrambe le quote.':'Caricamento scheda…');
+ const edgeLabels={left:'sinistro',right:'destro',bottom:'inferiore',top:'superiore'};
+ status.textContent=result?.ok?(edgeLabels[edge]?'Aggancio valido · bordo '+edgeLabels[edge]:'Posizione valida.'):result?.error||(spec?'Inserisci entrambe le quote.':'Caricamento scheda…');
  return result?.ok?candidate:null;
 }
 function pickPoint(event){
  const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(event.currentTarget.getScreenCTM().inverse());
  const owner=window.VSTechBridge.selected();
  if(!owner||point.x<0||point.x>owner.w||-point.y<0||-point.y>owner.h)return;
- if(!$('pickX').readOnly)$('pickX').value=point.x.toFixed(3);
- $('pickY').value=(-point.y).toFixed(3);
+ const y=-point.y;
+ if($('pickEdge').value==='auto'){
+  autoEdge=[['left',point.x],['right',owner.w-point.x],['bottom',y],['top',owner.h-y]].sort((a,b)=>a[1]-b[1])[0][0];
+ }
+ $('pickX').value=point.x.toFixed(3);
+ $('pickY').value=y.toFixed(3);
  previewPlacement();
 }
 function queuePlacement(){

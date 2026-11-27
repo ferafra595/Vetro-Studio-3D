@@ -4,7 +4,20 @@ const T=()=>window.THREE, $id=id=>document.getElementById(id), mm=n=>Math.round(
 const catalog={
  scala:[['S01','Scala dritta · borchie','straight','borchie'],['S02','Scala dritta · profilo','straight','profilo'],['S03','Scala a L · borchie','L','borchie'],['S04','Scala a L · montanti','L','montanti'],['S05','Scala a U · borchie','U','borchie'],['S06','Scala a U · profilo','U','profilo']],
  parapetto:[['P01','Parapetto a borchie','linear','borchie'],['P02','Parapetto con profilo','linear','profilo'],['P03','Ringhiera con montanti','linear','montanti'],['P04','Parapetto ad angolo','corner','morsetti']],
- doccia:[['D01','Walk-in fisso','walkin','profilo'],['D02','Nicchia scorrevole','nicchia','scorrevole'],['D03','Angolare battente','angolo','battente'],['D04','Angolare scorrevole','angolo','scorrevole'],['D05','Doppia anta battente','doppia','battente']],
+ doccia:[
+  ['D01','Walk-in fisso','walkin','profilo'],['D02','Nicchia · scorrevole singola','nicchia','scorrevole'],
+  ['D03','Angolare battente','angolo','battente'],['D04','Angolare scorrevole','angolo','scorrevole'],
+  ['D05','Angolare · doppia battente','doppia','battente'],
+  ['D06','Box quadrato','corner','sliding',900,900,0],['D07','Box rettangolare','corner','sliding',1200,900,0],
+  ['D08','Box quadrato + parete fissa','corner','sliding',900,900,1],['D09','Box rettangolare + parete fissa','corner','sliding',1200,900,1],
+  ['D10','Box semicircolare','curved','sliding',900,900,0],
+  ['D11','Scorrevole + 1 parete fissa','front','sliding',1200,900,1],['D12','Scorrevole + 2 pareti fisse','front','sliding',1200,900,2],
+  ['D13','Nicchia · doppia scorrevole','front','doubleSlide',1600,900,0],
+  ['D14','Doppia scorrevole + 1 parete fissa','front','doubleSlide',1600,900,1],['D15','Doppia scorrevole + 2 pareti fisse','front','doubleSlide',1600,900,2],
+  ['D16','Nicchia · pieghevole','front','fold',900,900,0],['D17','Pieghevole + 1 parete fissa','front','fold',900,900,1],
+  ['D18','Pieghevole + 2 pareti fisse','front','fold',900,900,2],['D19','Nicchia · battente','front','swing',900,900,0],
+  ['D20','Battente + 1 parete fissa','front','swing',900,900,1],['D21','Battente + 2 pareti fisse','front','swing',900,900,2]
+ ],
  porta:[['O01','Battente singola','battente','singola'],['O02','Battente doppia','battente','doppia'],['O03','Scorrevole singola','scorrevole','singola'],['O04','Scorrevole doppia','scorrevole','doppia'],['O05','Porta a libro','libro','doppia']],
  vetrina:[['V01','Vetrina modulare','modulare',3],['V02','Vetrina con ingresso','ingresso',3],['V03','Vetrina angolare','angolo',2]],
  specchio:[['M01','Specchio rettangolare','rettangolo',1],['M02','Specchio circolare','circolare',1],['M03','Specchio ad arco','arco',1]]};
@@ -79,25 +92,83 @@ function runStairs(c){
  }
  return a;
 }
+function buildShower(add,[code,,layout,mechanism,width=1200,depth=900,returns]){
+ const h=2050,wallHeight=2440,glass=8,wall=95;
+ const corner=layout==='corner',curved=layout==='curved';
+ const sideGlass=returns??(['angolo','doppia'].includes(layout)?1:0);
+ const niche=!corner&&!curved&&layout!=='walkin'&&layout!=='angolo'&&layout!=='doppia';
+ const front=depth/2;
+ const frontFrame={x:0,z:front,ry:0,length:width};
+ const rightFrame={x:width/2,z:0,ry:90,length:depth};
+ const addWall=(name,x,z,w,d)=>add('wall',name,x,wallHeight/2,z,w,wallHeight,d,{finish:'tile'});
+ add('floor','Piatto doccia',0,-35,0,width,70,depth,{finish:'ceramic',trayRadius:curved?width:null});
+ addWall('Parete posteriore',0,-front-wall/2,width+2*wall,wall);
+ if(sideGlass===2||(corner&&sideGlass))add('glass','Parete fissa sinistra',-width/2,h/2,0,depth,h,glass,{ry:90});
+ else addWall('Parete sinistra',-width/2-wall/2,0,wall,depth);
+ if(sideGlass>=1&&!corner)add('glass','Parete fissa destra',width/2,h/2,0,depth,h,glass,{ry:90});
+ else if(niche)addWall('Parete destra',width/2+wall/2,0,wall,depth);
+
+ function panel(frame,name,along,length,inset=0,options={}){
+  const [x,,z]=panelVector(frame,along,0,inset);
+  return add('glass',name,frame.x+x,h/2,frame.z+z,length,h,glass,{ry:frame.ry,...options});
+ }
+ function handle(leaf,along){
+  const [x,,z]=panelVector(leaf,along,0,leaf.interiorTrack?-19:19);
+  add('accessory','Maniglia',leaf.x+x,1050,leaf.z+z,28,190,38,{ry:leaf.ry,accessoryType:'maniglia',attachTo:leaf.id});
+ }
+ function rail(frame){
+  const [x,,z]=panelVector(frame,0,0,-7);
+  add('profile','Binario superiore',frame.x+x,h+16,frame.z+z,frame.length,32,45,{ry:frame.ry});
+ }
+ function sliding(frame,direction,double=false){
+  const segment=frame.length/(double?4:2);
+  const travel=segment-14;
+  panel(frame,'Vetro fisso '+(direction<0?'sinistro':'destro'),direction*(frame.length/2-segment/2),segment-6);
+  const leaf=panel(frame,'Anta scorrevole '+(direction<0?'sinistra':'destra'),direction*(frame.length/2-1.5*segment),segment+8,-14,
+   {openingType:'slide',openingSide:direction,slideTravel:travel,interiorTrack:true});
+  handle(leaf,-direction*(segment/2-65));
+ }
+ if(curved){
+  const radius=width;
+  for(const [i,[start,end]] of [[0,22.5],[22.5,45],[45,67.5],[67.5,90]].entries()){
+   const moving=i===1||i===2,arcRadius=radius-(moving?14:0),mid=(start+end)*Math.PI/360;
+   const x=-width/2+arcRadius*Math.cos(mid),z=-front+arcRadius*Math.sin(mid);
+   const curve={x:-width/2,z:-front,radius:arcRadius,start,end};
+   const leaf=add('glass',moving?'Anta curva '+i:'Vetro curvo fisso '+(i+1),x,h/2,z,arcRadius*(end-start)*Math.PI/180,h,glass,
+    {curve,openingType:moving?'curve':'fixed',openingSide:i===1?-1:1,ry:-mid*180/Math.PI+90});
+   if(moving)handle(leaf,0);
+  }
+ }else if(corner){
+  sliding(frontFrame,-1);
+  sliding(rightFrame,1);
+  rail(frontFrame);rail(rightFrame);
+ }else if(mechanism==='doubleSlide'){
+  sliding(frontFrame,-1,true);sliding(frontFrame,1,true);rail(frontFrame);
+ }else if(mechanism==='scorrevole'||mechanism==='sliding'){
+  sliding(frontFrame,-1);rail(frontFrame);
+ }else if(mechanism==='fold'){
+  const root=panel(frontFrame,'Anta pieghevole · lato muro',-width/4,width/2-4,0,{openingType:'fold',openingSide:-1,foldSpan:width/2});
+  const leaf=panel(frontFrame,'Anta pieghevole · lato maniglia',width/4,width/2-4,0,{foldRoot:root.id});
+  root.foldPartner=leaf.id;
+  handle(leaf,width/4-70);
+ }else if(layout==='walkin'){
+  panel(frontFrame,'Vetro walk-in',-width/6,width*2/3);
+ }else{
+  const paired=layout==='doppia';
+  const length=paired||layout==='angolo'?width/2:width;
+  if(layout==='angolo')panel(frontFrame,'Vetro fisso sinistro',-width/4,length-8);
+  const sides=paired?[-1,1]:[layout==='angolo'?1:-1];
+  for(const side of sides){
+   const leaf=panel(frontFrame,paired?'Anta '+(side<0?'sinistra':'destra'):'Anta battente',paired||layout==='angolo'?side*width/4:0,length-8,0,{openingType:'swing',openingSide:side});
+   handle(leaf,-side*(length/2-70));
+  }
+ }
+}
 function build(cat,t){const a=[],code=t[0],kind=t[2],fix=t[3],cfg={category:cat,template:code,settings:{steps:12,rise:175,tread:285,width:1050,railHeight:1080,maxPanel:1050,thickness:12,finish:'wood',layout:kind,fix,side:'right',handrail:fix==='montanti'}};
  const add=(k,n,x,y,z,w,h,d,o={})=>push(a,k,n,x,y,z,w,h,d,o);
  if(cat==='scala')return {objects:runStairs(cfg.settings),studio:cfg};
  if(cat==='parapetto'){const w=3600,h=1050,d=1200,n=4;add('floor','Soletta rivestita',0,-70,0,w+200,140,d,{finish:'stone'});for(let i=0;i<n;i++){let x=-w/2+w*(i+.5)/n;let panel=add('glass','Vetro parapetto '+(i+1),x,h/2,d/2,w/n-12,h,12,{group:'Parapetto'});if(fix==='montanti')add('profile','Montante '+(i+1),x-w/n/2,h/2,d/2,42,h,42);else if(fix==='borchie')for(let k of [-.28,.28])add('accessory','Borchia',x+k*w/n,140,d/2+28,50,50,28,{accessoryType:'borchia',attachTo:panel.id})}add('profile','Corrimano',0,h+20,d/2,w,35,35);if(kind==='corner')add('glass','Ritorno angolare',w/2,h/2,0,1000,h,12,{ry:90})}
- if(cat==='doccia'){
-  const w=1200,h=2050,d=900,sliding=fix==='scorrevole';
-  add('floor','Piatto doccia',0,-35,0,w+60,70,d+50,{finish:'ceramic'});
-  add('wall','Parete posteriore',0,1220,-d/2-45,w+250,2440,90,{finish:'tile'});
-  const addDoor=(name,x,side,opening={})=>{
-   const door=add('glass',name,x,h/2,d/2+(sliding?14:0),w*.5-8,h,8,{group:'Porta doccia',slidingTrack:sliding,...opening});
-   add('accessory','Maniglia',x-side*w*.17,1050,door.z+32,28,210,40,{accessoryType:'maniglia',attachTo:door.id});
-  };
-  if(kind==='doppia')addDoor('Anta sinistra',-w*.25,-1,{openingType:'swing',openingSide:-1});
-  else add('glass','Lato fisso',-w*.25,h/2,d/2,w*.5-8,h,8);
-  if(kind!=='walkin')addDoor(sliding?'Anta scorrevole':kind==='doppia'?'Anta destra':'Anta battente',w*.25,1);
-  if(kind==='angolo'||kind==='doppia')add('glass','Ritorno laterale',w/2,h/2,0,d,h,8,{ry:90});
-  if(sliding)add('profile','Binario superiore',0,h+15,d/2+7,w,32,47);
-  add('profile','Profilo a muro',-w/2,h/2,d/2,28,h,40);
- }
+ if(cat==='doccia')buildShower(add,t);
  if(cat==='porta'){let w=1200,h=2250,n=fix==='doppia'?2:1;for(let i=0;i<n;i++){let pw=w/n,x=-w/2+pw*(i+.5);let p=add('glass',kind==='scorrevole'?'Anta scorrevole '+(i+1):'Anta '+(i+1),x,h/2,0,pw-12,h-12,10);add('accessory','Maniglia',x+pw*.28,1050,32,25,210,35,{accessoryType:'maniglia',attachTo:p.id});if(kind==='battente')for(let y of [350,h-350])add('accessory','Cerniera',x-pw*.45,y,10,70,85,40,{accessoryType:'cerniera',attachTo:p.id})}add('profile','Telaio superiore',0,h+13,0,w+50,28,45);for(let s of [-1,1])add('profile','Montante laterale',s*w/2,h/2,0,30,h,45);if(kind==='scorrevole')add('profile','Binario',0,h+55,0,w+300,35,50)}
  if(cat==='vetrina'){let w=3600,h=2450,n=N(fix,3),pw=w/n;for(let i=0;i<n;i++){let x=-w/2+pw*(i+.5),p=add('glass',kind==='ingresso'&&i===1?'Porta ingresso':'Pannello fisso '+(i+1),x,h/2,0,pw-15,h-20,10);if(kind==='ingresso'&&i===1)add('accessory','Maniglia',x+pw*.3,1050,30,25,200,35,{accessoryType:'maniglia',attachTo:p.id})}for(let i=0;i<=n;i++)add('profile','Montante '+i,-w/2+i*pw,h/2,0,30,h,55);add('profile','Traverso superiore',0,h,0,w+40,35,55);if(kind==='angolo')add('glass','Vetrina laterale',w/2,h/2,-500,1000,h,10,{ry:90})}
  if(cat==='specchio'){add('wall','Parete rivestita',0,1050,-55,2200,2100,90,{finish:'stone'});let o=add('mirror','Specchio',0,950,0,1100,1700,6);if(kind==='circolare'||kind==='arco')o.shape=kind==='arco'?[[0,0],[1100,0],[1100,1300],[1050,1510],[900,1650],[550,1700],[200,1650],[50,1510],[0,1300]]:Array.from({length:48},(_,i)=>[550+540*Math.cos(2*Math.PI*i/48),850+840*Math.sin(2*Math.PI*i/48)]);}
@@ -106,7 +177,14 @@ function choose(cat,code){const entry=catalog[cat]?.find(t=>t[0]===code);if(!ent
 function blank(){remember();model().objects=[];model().studio={category:'libero',template:null,settings:{}};U.selected=null;refresh(true)}
 function refresh(modelChanged=false){if(modelChanged)drawScene();renderSidebar();renderProps();updatePricing();updateTitle();queueAutosave()}
 function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=setTimeout(async()=>{if(U.loading||!['designer','cad'].includes(S.view))return;try{U.loading=true;await saveCurrent()}catch(e){console.warn('Autosave:',e)}finally{U.loading=false}},5000)}
-function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p><button class="btn primary" style="width:100%;margin-bottom:10px" onclick="VSTech.picker()">+ Inserisci dalla libreria tecnica</button>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino. Tre finiture moderne, ognuna modificabile.</p><div class="vsModels">${[['concrete','01 · Cemento architettonico'],['stone','02 · Pietra naturale'],['wood','03 · Rovere contemporaneo']].map(([k,l])=>`<button class="vsModel" onclick="VS.finish('${k}')">${l}</button>`).join('')}</div><button class="btn" onclick="VS.applyModernScene()">Applica design moderno all’ambiente</button>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
+const architecturalFinishes=[
+ ['tile','Grès avorio','#d1cdc0'],['tileSage','Ceramica salvia','#8b9d8d'],['tileSlate','Grès ardesia','#59636a'],
+ ['ceramic','Ceramica bianca','#e4e4df'],['concrete','Cemento architettonico','#969e9d'],['stone','Pietra naturale','#a8a093'],
+ ['wood','Rovere','#b88c64'],['marble','Marmo chiaro','#d3d2d1']
+];
+function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p><button class="btn primary" style="width:100%;margin-bottom:10px" onclick="VSTech.picker()">+ Inserisci dalla libreria tecnica</button>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino.</p>
+ <div class="vsModels">${architecturalFinishes.map(([key,label,color])=>`<button class="vsModel" onclick="VS.finish('${key}')">
+ <span style="flex:0 0 24px;height:24px;border-radius:5px;background:${color};border:1px solid #9ba7a9" aria-hidden="true"></span><span>${label}</span></button>`).join('')}</div>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
 function renderProps(){
  const el=$id('vsProps');
  if(!el)return;
@@ -115,7 +193,7 @@ function renderProps(){
  const panel=['glass','mirror'].includes(o.kind);
  const fields=keys=>keys.map(([key,label])=>`<label>${label}<input class="field" type="number" step="0.1" value="${N(o[key],key==='mountScale'?100:0)}" onchange="VS.edit('${o.id}','${key}',this.value)"></label>`).join('');
  const finishes=['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica
- <select class="field" onchange="VS.finish(this.value)">${[['concrete','Cemento moderno'],['tile','Piastrelle'],['ceramic','Ceramica'],['stone','Pietra naturale'],['wood','Rovere contemporaneo']].map(([value,label])=>`<option value="${value}" ${o.finish===value?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
+ <select class="field" onchange="VS.finish(this.value)">${architecturalFinishes.map(([value,label])=>`<option value="${value}" ${o.finish===value?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
  const toolsOpen=el.querySelector('details')?.open;
  const motion=panel?doorOpening(o):null;
  const motionControls=motion?`<button class="btn" onclick="VS.toggleDoor('${o.id}')">${doorPreviews.get(o.id)?.target?'Chiudi anta':'Apri anta'}</button>`:'';
@@ -144,16 +222,29 @@ function cadPlan(panels){
  if(!panels.length)return '';
  const bounds=panels.map((o,i)=>{
   const [dx,,dz]=panelVector(o,N(o.w)/2,0,0);
-  const x=N(o.x),z=N(o.z);
-  return {i,x,z,x1:x-dx,z1:z-dz,x2:x+dx,z2:z+dz};
+  const x=N(o.x),z=N(o.z)+showerTrackOffset(o);
+  const points=o.curve?Array.from({length:17},(_,step)=>{
+   const curve=o.curve,angle=(curve.start+(curve.end-curve.start)*step/16)*Math.PI/180;
+   return [curve.x+curve.radius*Math.cos(angle),curve.z+curve.radius*Math.sin(angle)];
+  }):[[x-dx,z-dz],[x+dx,z+dz]];
+  return {i,x,z,points};
  });
- const xs=bounds.flatMap(o=>[o.x1,o.x2]),zs=bounds.flatMap(o=>[o.z1,o.z2]);
+ const walls=model().objects.filter(o=>o.kind==='wall').map(o=>{
+  const points=[[-.5,-.5],[.5,-.5],[.5,.5],[-.5,.5]].map(([u,v])=>{
+   const [x,,z]=panelVector(o,u*N(o.w),0,v*N(o.d));
+   return [N(o.x)+x,N(o.z)+z];
+  });
+  return {points};
+ });
+ const points=[...bounds,...walls].flatMap(o=>o.points);
+ const xs=points.map(p=>p[0]),zs=points.map(p=>p[1]);
  const left=Math.min(...xs),top=Math.min(...zs),w=Math.max(...xs)-left,h=Math.max(...zs)-top;
  const pad=Math.max(w,h,500)*.16;
  const palette=cadColors;
  return `<h3>Posizione delle lastre · vista dall’alto</h3>
  <svg viewBox="${left-pad} ${top-pad} ${w+2*pad} ${h+2*pad}" width="100%" height="220" role="img" aria-label="Pianta delle lastre numerate">
- ${bounds.map(o=>`<g><line x1="${o.x1}" y1="${o.z1}" x2="${o.x2}" y2="${o.z2}" stroke="${palette[o.i%palette.length]}" stroke-width="5" vector-effect="non-scaling-stroke"/>
+ ${walls.map(wall=>`<polygon points="${wall.points.join(' ')}" fill="#c4cacb"/>`).join('')}
+ ${bounds.map(o=>`<g><polyline points="${o.points.join(' ')}" fill="none" stroke="${palette[o.i%palette.length]}" stroke-width="5" vector-effect="non-scaling-stroke"/>
  <circle cx="${o.x}" cy="${o.z}" r="${pad*.22}" fill="${palette[o.i%palette.length]}"/><text x="${o.x}" y="${o.z}" fill="white" text-anchor="middle" dominant-baseline="central" font-size="${pad*.24}">${o.i+1}</text></g>`).join('')}
  </svg>`;
 }
@@ -163,9 +254,9 @@ function cadPanelCard(panel,index){
  let outline;
  try{outline=technicalGlassShape(panel).outline;}catch{outline=panel.shape;}
  const points=(outline||[[0,0],[width,0],[width,height],[0,height]]).map(([x,y])=>`${N(x)},${-N(y)}`).join(' ');
- return `<button class="btn cadPanelCard" data-cad-panel="${esc(panel.id)}" onclick="VS.openCad(this.dataset.cadPanel)">
+ return `<button class="btn cadPanelCard" data-cad-panel="${esc(panel.id)}" onclick="VS.${panel.curve?'show3D':'openCad'}(this.dataset.cadPanel)">
  <svg width="64" height="58" viewBox="-8 ${-height-8} ${width+16} ${height+16}" aria-hidden="true"><polygon points="${points}" fill="${color}" fill-opacity=".2" stroke="${color}" vector-effect="non-scaling-stroke"/></svg>
- <span><strong>${index+1}. ${esc(panel.name)}</strong><br>${width} × ${height} × ${N(panel.d)} mm</span></button>`;
+ <span><strong>${index+1}. ${esc(panel.name)}</strong><br>${width} × ${height} × ${N(panel.d)} mm${panel.curve?' · R '+panel.curve.radius+' mm':''}</span></button>`;
 }
 function cadPage(){
  initProject();
@@ -188,7 +279,10 @@ function cadPage(){
  </div>`;
 }
 function openCad(id=$id('vsCadPanel')?.value){
- if(id&&glassPanels().some(o=>o.id===id)){select(id);window.VSCAD2D.open();}
+ const panel=glassPanels().find(o=>o.id===id);
+ if(!panel)return;
+ if(panel.curve)return toast('Lastra curva: aprila in 3D per visualizzare il raggio');
+ select(id);window.VSCAD2D.open();
 }
 function show3D(id){
  if(id)select(id);
@@ -206,14 +300,14 @@ const materialCache=new Map();
 function makeSurfaceTexture(Three,finish){
  const key=finish||'concrete';if(materialCache.has(key))return materialCache.get(key);
  const canvas=document.createElement('canvas');canvas.width=512;canvas.height=512;const ctx=canvas.getContext('2d');
- const palette={wood:['#a87c53','#b89066','#6d503a'],stone:['#9f9789','#b8b1a5','#77766d'],tile:['#8e8b83','#cfcdc3','#aca99d'],ceramic:['#d4d6d4','#e4e4df','#aeb7b5'],marble:['#c8c7c3','#e0dfda','#9b9c9b'],concrete:['#8e9797','#a8ada9','#737c7b'],brick:['#a56b58','#bb8271','#d5a18e']};
+ const palette={wood:['#a87c53','#b89066','#6d503a'],stone:['#9f9789','#b8b1a5','#77766d'],tile:['#8e8b83','#d7d1c4','#bcb6aa'],tileSage:['#646d62','#adbcad','#778b7c'],tileSlate:['#555d60','#77838b','#535f68'],ceramic:['#d4d6d4','#e4e4df','#aeb7b5'],marble:['#c8c7c3','#e0dfda','#9b9c9b'],concrete:['#8e9797','#a8ada9','#737c7b'],brick:['#a56b58','#bb8271','#d5a18e']};
  const p=palette[key]||palette.concrete;ctx.fillStyle=p[0];ctx.fillRect(0,0,512,512);
  let seed=key.split('').reduce((a,b)=>a+b.charCodeAt(0),0)+13;const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
  for(let i=0;i<2800;i++){ctx.fillStyle=i%3?'#fff':'#222';ctx.globalAlpha=.007+rnd()*.04;let x=rnd()*512,y=rnd()*512,s=1+rnd()*8;ctx.fillRect(x,y,s,s)}ctx.globalAlpha=1;
- if(key==='tile'||key==='stone'||key==='brick'){
-  const tw=key==='brick'?128:256,th=key==='brick'?64:128;
+ if(key.startsWith('tile')||key==='stone'||key==='brick'){
+  const tw=key==='tileSlate'?512:key==='tileSage'||key==='brick'?128:256,th=key==='brick'?64:key==='tileSlate'?256:128;
   for(let y=0,row=0;y<512;y+=th,row++){
-   const offset=key==='tile'?0:row%2?tw/2:0;
+   const offset=key.startsWith('tile')?0:row%2?tw/2:0;
    for(let x=-offset;x<512;x+=tw){
     const face=ctx.createLinearGradient(x,y,x+tw,y+th);
     face.addColorStop(0,p[1]);
@@ -312,11 +406,30 @@ function technicalPatternValid(owner,spec,x,y,excludedId=null,pending=[]){
 function technicalPlacement(item,x,y,pending=[]){
  const owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
  if(!owner)return {ok:false,error:'Seleziona prima una lastra'};
+ if(owner.curve)return {ok:false,error:'Le lavorazioni su vetro curvo richiedono una scheda dedicata'};
  if(item.status!=='approved')return {ok:false,error:'La scheda tecnica non è stata approvata'};
  if(owner.d<N(item.glass_min)||owner.d>N(item.glass_max))return {ok:false,error:'Spessore vetro non compatibile con la scheda accessorio'};
  const spec=item.cut_spec||{holes:[],cutouts:[]};
  const error=technicalPatternValid(owner,spec,x,y,null,pending);
  return error?{ok:false,error}:{ok:true,owner,spec};
+}
+function orientTechnicalItem(item,edge){
+ const transforms={right:([x,y])=>[-x,y],bottom:([x,y])=>[-y,x],top:([x,y])=>[y,-x]};
+ const transform=transforms[edge];
+ if(!transform)return {...item,mountEdge:edge};
+ const spec=item.cut_spec;
+ return {...item,mountEdge:edge,cut_spec:{...spec,
+  holes:(spec.holes||[]).map(h=>{const [x,y]=transform([N(h.x),N(h.y)]);return {...h,x,y};}),
+  cutouts:(spec.cutouts||[]).map(poly=>poly.map(point=>transform(point.map(Number))))
+ }};
+}
+function orientHardware(T,edge,model){
+ const mount=new T.Group();
+ mount.add(model);
+ if(edge==='right')mount.scale.x=-1;
+ if(edge==='bottom')mount.rotation.z=Math.PI/2;
+ if(edge==='top')mount.rotation.z=-Math.PI/2;
+ return mount;
 }
 function prepareTechnicalBatch(placements){
  const pending=[];
@@ -338,7 +451,7 @@ function placeTechnicalBatch(placements){
  const added=result.pending.map(({item,kind,...position})=>{
   const o=object(kind,item.name,0,0,0,50,65,35,{
    ...position,accessoryType:item.category,technicalCode:item.code,
-   technicalSpec:structuredClone(position.technicalSpec),technicalUpdatedAt:item.updated_at,
+   technicalSpec:structuredClone(position.technicalSpec),technicalUpdatedAt:item.updated_at,mountEdge:item.mountEdge,
    technicalUnitPrice:Math.max(0,N(item.price))
   });
   linkedAccessoryPosition(o);
@@ -349,9 +462,31 @@ function placeTechnicalBatch(placements){
  return {ok:true,id:added[0].id};
 }
 function placeTechnicalAccessory(item,x,y){return placeTechnicalBatch([{item,x,y}]);}
+function curvedShowerGeometry(Three,o){
+ const curve=o.curve||{x:-o.w/2,z:-o.d/2,radius:o.trayRadius,start:0,end:90};
+ const start=curve.start*Math.PI/180,end=curve.end*Math.PI/180;
+ const [cx,,cz]=o.curve?panelVector(o,curve.x-o.x,0,curve.z-o.z,true):[curve.x,0,curve.z];
+ const angle=N(o.ry)*Math.PI/180;
+ const outer=curve.radius+(o.curve?o.d/2:0),inner=o.curve?curve.radius-o.d/2:0;
+ const shape=new Three.Shape();
+ for(const [radius,from,to] of [[outer,start,end],[inner,end,start]]){
+  for(let i=0;i<=24;i++){
+   const theta=from+(to-from)*i/24+angle;
+   const x=cx+Math.cos(theta)*radius,y=-(cz+Math.sin(theta)*radius);
+   if(radius===outer&&i===0)shape.moveTo(x,y);else shape.lineTo(x,y);
+   if(!radius)break;
+  }
+ }
+ shape.closePath();
+ const mesh=new Three.ExtrudeGeometry(shape,{depth:o.h,bevelEnabled:false});
+ mesh.rotateX(-Math.PI/2);
+ mesh.translate(0,-o.h/2,0);
+ return mesh;
+}
 function createMesh(o){
  const Three=T(),glass=['glass','mirror'].includes(o.kind),building=['wall','floor','stair','balcony'].includes(o.kind);let geo;
- if(glass&&(o.shape?.length>=3||model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))){const profile=technicalGlassShape(o);let outline=profile.outline;let s=new Three.Shape();s.moveTo(outline[0][0]-o.w/2,outline[0][1]-o.h/2);outline.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of technicalHoles(o)){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}for(const poly of profile.voids){let path=new Three.Path();path.moveTo(poly[0][0]-o.w/2,poly[0][1]-o.h/2);for(const p of poly.slice(1))path.lineTo(p[0]-o.w/2,p[1]-o.h/2);path.closePath();s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
+ if(o.curve||o.trayRadius)geo=curvedShowerGeometry(Three,o);
+ else if(glass&&(o.shape?.length>=3||model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))){const profile=technicalGlassShape(o);let outline=profile.outline;let s=new Three.Shape();s.moveTo(outline[0][0]-o.w/2,outline[0][1]-o.h/2);outline.slice(1).forEach(p=>s.lineTo(p[0]-o.w/2,p[1]-o.h/2));s.closePath();for(const hole of technicalHoles(o)){let path=new Three.Path();if(hole.type==='slot'&&hole.length>2*hole.r){const c=window.VSGeometry.slotOutline(hole,32);path.moveTo(c[0][0]-o.w/2,c[0][1]-o.h/2);c.slice(1).forEach(p=>path.lineTo(p[0]-o.w/2,p[1]-o.h/2));path.closePath()}else{path.absarc(hole.x-o.w/2,hole.y-o.h/2,hole.r,0,Math.PI*2,true)}s.holes.push(path)}for(const poly of profile.voids){let path=new Three.Path();path.moveTo(poly[0][0]-o.w/2,poly[0][1]-o.h/2);for(const p of poly.slice(1))path.lineTo(p[0]-o.w/2,p[1]-o.h/2);path.closePath();s.holes.push(path)}geo=new Three.ExtrudeGeometry(s,{depth:Math.max(1,o.d),bevelEnabled:false,curveSegments:32});geo.translate(0,0,-o.d/2)}
  else geo=new Three.BoxGeometry(Math.max(1,o.w),Math.max(1,o.h),Math.max(1,o.d));
  let material;
  if(glass){material=new Three.MeshPhysicalMaterial({color:o.kind==='mirror'?0xdde6e8:0xb5dfd8,metalness:o.kind==='mirror'?1:0,roughness:o.kind==='mirror'?.095:.045,transmission:o.kind==='mirror'?0:.96,transparent:false,opacity:1,ior:1.5,thickness:Math.max(1,o.d),side:Three.FrontSide,envMapIntensity:1.15,depthWrite:true});
@@ -393,7 +528,12 @@ function createMesh(o){
      child.updateMatrix();
      bounds.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrix));
     }
-    for(const child of group.children)child.position.add(new Three.Vector3(N(o.mountX),N(o.mountY),N(o.mountZ)-bounds.min.z));
+    const hardware=new Three.Group();
+    hardware.add(...group.children);
+    for(const child of hardware.children)child.position.z-=bounds.min.z;
+    const mount=orientHardware(Three,o.mountEdge,hardware);
+    mount.position.set(N(o.mountX),N(o.mountY),N(o.mountZ));
+    group.add(mount);
    }
    return group;
  }
@@ -418,9 +558,13 @@ async function loadTechnicalGLB(o,placeholder){
    mesh.userData.sharedStudioMaps=true;
    mesh.castShadow=true;
    mesh.receiveShadow=true;
-  });const box=new THREE.Box3().setFromObject(mount);const center=box.getCenter(new THREE.Vector3());mount.position.add(new THREE.Vector3(N(o.mountX)-center.x,N(o.mountY)-center.y,N(o.mountZ)-box.min.z));
-  for(const mesh of placeholder.children){mesh.geometry?.dispose();mesh.material?.dispose();}
-  placeholder.clear();placeholder.add(mount);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});highlight();
+  });const box=new THREE.Box3().setFromObject(mount);
+  const center=box.getCenter(new THREE.Vector3());
+  mount.position.set(-center.x,-center.y,-box.min.z);
+  const oriented=orientHardware(THREE,o.mountEdge,mount);
+  oriented.position.set(N(o.mountX),N(o.mountY),N(o.mountZ));
+  placeholder.traverse(mesh=>{mesh.geometry?.dispose();mesh.material?.dispose();});
+  placeholder.clear();placeholder.add(oriented);placeholder.traverse(n=>{if(n.isMesh)n.userData.studioId=o.id});highlight();
  }catch(e){console.warn('GLB accessorio non disponibile:',e)}
 }
 function disposeModel(group){
@@ -438,11 +582,22 @@ function disposeModel(group){
  }
  renderMeshes.clear();
 }
-function drawScene(){if(!V?.studio)return;const group=V.group;disposeModel(group);for(const o of model().objects){if(o.technicalSpec)linkedAccessoryPosition(o);let mesh=createMesh(o);group.add(mesh);renderMeshes.set(o.id,mesh);if(o.technicalId)loadTechnicalGLB(o,mesh)}highlight()}
+function showerTrackOffset(panel){
+ const {category,template}=model().studio;
+ if(category!=='doccia'||!['D02','D04'].includes(template)||panel.interiorTrack||!panel.name?.startsWith('Anta'))return 0;
+ const fixed=glassPanels().find(o=>o.name==='Lato fisso');
+ return fixed?fixed.z-panel.z-(fixed.d+panel.d)/2-6:0;
+}
+function closedTrackOffset(object){
+ const panel=object.kind==='glass'?object:model().objects.find(o=>o.id===object.attachTo)||
+  (object.kind==='accessory'&&object.name==='Maniglia'?glassPanels().find(o=>o.name?.startsWith('Anta')&&Math.abs(o.x-object.x)<o.w/2):null);
+ return panel?showerTrackOffset(panel):0;
+}
+function drawScene(){if(!V?.studio)return;const group=V.group;disposeModel(group);for(const o of model().objects){if(o.technicalSpec)linkedAccessoryPosition(o);let mesh=createMesh(o);mesh.position.z+=closedTrackOffset(o);group.add(mesh);renderMeshes.set(o.id,mesh);if(o.technicalId)loadTechnicalGLB(o,mesh)}highlight()}
 function doorOpening(panel){
  if(panel.kind!=='glass')return null;
  if(panel.openingType==='fixed')return null;
- if(['swing','slide'].includes(panel.openingType))return {type:panel.openingType,side:panel.openingSide===1?1:-1};
+ if(['swing','slide','fold','curve'].includes(panel.openingType))return {type:panel.openingType,side:panel.openingSide===1?1:-1};
  const {category,template}=model().studio;
  const door=panel.name?.startsWith('Anta');
  if(!door)return null;
@@ -453,8 +608,10 @@ function doorOpening(panel){
  return null;
 }
 function toggleDoor(id){
- const panel=model().objects.find(o=>o.id===id);
+ let panel=model().objects.find(o=>o.id===id);
+ if(panel?.foldRoot)panel=model().objects.find(o=>o.id===panel.foldRoot);
  if(!panel||!doorOpening(panel))return;
+ id=panel.id;
  const preview=doorPreviews.get(id)||{value:0,target:0};
  preview.target=preview.target?0:1;
  doorPreviews.set(id,preview);
@@ -482,23 +639,30 @@ function previewDoors(dt){
   const side=new Three.Vector3(1,0,0).applyEuler(angle);
   const pivot=position.clone().addScaledVector(side,opening.side*panel.w/2);
   const rotation=new Three.Quaternion().setFromAxisAngle(new Three.Vector3(0,1,0).applyEuler(angle),opening.side*progress*Math.PI*.43);
-  const shift=side.clone().multiplyScalar(opening.side*panel.w*progress*.92);
   const template=model().studio.template;
-  if(opening.type==='slide'&&!panel.openingType&&['D02','D04'].includes(template)){
-   shift.copy(side).multiplyScalar(-panel.w*progress*.92);
-   // Older shower templates have coplanar leaves. Preview the travel on a parallel plane.
-   const front=new Three.Vector3(0,0,1).applyEuler(angle);
-   if(!panel.slidingTrack)shift.addScaledVector(front,(panel.d+6)*Math.min(1,progress*8));
+  const legacySlide=opening.type==='slide'&&!panel.openingType&&['D02','D04'].includes(template);
+  const shift=side.clone().multiplyScalar((legacySlide?-1:opening.side)*(panel.slideTravel??panel.w*.92)*progress);
+  if(opening.type==='curve'){
+   pivot.set(panel.curve.x,panel.y,panel.curve.z);
+   rotation.setFromAxisAngle(new Three.Vector3(0,1,0),-opening.side*progress*Three.MathUtils.degToRad(panel.curve.end-panel.curve.start-1));
   }
+  const partner=opening.type==='fold'?objects.find(o=>o.id===panel.foldPartner):null;
+  const foldRotation=new Three.Quaternion().setFromAxisAngle(new Three.Vector3(0,1,0).applyEuler(angle),-opening.side*progress*Math.PI*.43);
+  const joint=pivot.clone().addScaledVector(side,panel.foldSpan||0);
+  const foldedJoint=joint.clone().sub(pivot).applyQuaternion(rotation).add(pivot);
   for(const o of objects){
    const oldShowerHandle=['D02','D03','D04','D05'].includes(template)&&o.kind==='accessory'&&o.name==='Maniglia'&&!o.attachTo&&Math.abs(o.x-panel.x)<panel.w/2;
-   if(o.id!==id&&o.attachTo!==id&&!oldShowerHandle)continue;
+   const secondary=partner&&(o.id===partner.id||o.attachTo===partner.id);
+   if(o.id!==id&&o.attachTo!==id&&!oldShowerHandle&&!secondary)continue;
    const mesh=renderMeshes.get(o.id);
    if(!mesh)continue;
-   mesh.position.set(N(o.x),N(o.y),N(o.z));
+   mesh.position.set(N(o.x),N(o.y),N(o.z)+closedTrackOffset(o));
    mesh.rotation.set(...['rx','ry','rz'].map(key=>Three.MathUtils.degToRad(N(o[key]))));
    if(opening.type==='slide')mesh.position.add(shift);
-   else{
+   else if(secondary){
+    mesh.position.sub(joint).applyQuaternion(foldRotation).add(foldedJoint);
+    mesh.quaternion.premultiply(foldRotation);
+   }else{
     mesh.position.sub(pivot).applyQuaternion(rotation).add(pivot);
     mesh.quaternion.premultiply(rotation);
    }
@@ -624,7 +788,7 @@ function initStudio(){
  // Drag diretto: oggetto con clic, Alt+drag orbita; Shift+drag sposta sul piano XZ.
  const worldScale=()=>2*orbit.dist*Math.tan(camera.fov*Math.PI/360)/Math.max(250,canvas.clientHeight);
  function magnetic(moved){if(!U.snap)return;const threshold=65;let best={x:null,y:null,z:null};for(const q of model().objects){if(q.id===moved.id)continue;for(const axis of ['x','y','z']){const size=axis==='x'?'w':axis==='y'?'h':'d',a=moved[size]/2,b=q[size]/2;let options=[q[axis],q[axis]+a+b,q[axis]-a-b,q[axis]+b-a,q[axis]-b+a];for(const v of options){let d=Math.abs(moved[axis]-v);if(d<=threshold&&(!best[axis]||d<best[axis].d))best[axis]={v,d}}}}for(const axis of ['x','y','z'])if(best[axis])moved[axis]=mm(best[axis].v)}
- canvas.addEventListener('pointerdown',e=>{const id=pick(e),o=model().objects.find(x=>x.id===id);drag={x:e.clientX,y:e.clientY,az:orbit.az,el:orbit.el,id,mode:e.altKey||doorPreviews.size?'orbit':id?'move':'orbit',start:o?{x:o.x,y:o.y,z:o.z}:null,shift:e.shiftKey,moved:false,recorded:false};if(id){U.selected=id;renderProps();renderSidebar();highlight()}canvas.setPointerCapture(e.pointerId)});
+ canvas.addEventListener('pointerdown',e=>{const id=pick(e),o=model().objects.find(x=>x.id===id);drag={x:e.clientX,y:e.clientY,az:orbit.az,el:orbit.el,id,mode:e.altKey||doorPreviews.size||o?.curve||o?.trayRadius?'orbit':id?'move':'orbit',start:o?{x:o.x,y:o.y,z:o.z}:null,shift:e.shiftKey,moved:false,recorded:false};if(id){U.selected=id;renderProps();renderSidebar();highlight()}canvas.setPointerCapture(e.pointerId)});
  canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)<3&&!drag.moved)return;drag.moved=true;if(drag.mode==='move'&&drag.start){const o=model().objects.find(v=>v.id===drag.id);if(!o)return;if(!drag.recorded){remember();drag.recorded=true}const step=worldScale();const right=new Three.Vector3().setFromMatrixColumn(camera.matrixWorld,0),up=new Three.Vector3().setFromMatrixColumn(camera.matrixWorld,1);if(drag.shift){o.x=mm(drag.start.x+right.x*dx*step-up.x*dy*step);o.z=mm(drag.start.z+right.z*dx*step-up.z*dy*step)}else{o.x=mm(drag.start.x+(right.x*dx-up.x*dy)*step);o.y=mm(drag.start.y+(right.y*dx-up.y*dy)*step);o.z=mm(drag.start.z+(right.z*dx-up.z*dy)*step)}
  const mesh=renderMeshes.get(o.id);
  if(o.technicalSpec&&mesh)mesh.position.set(o.x,o.y,o.z);
@@ -633,7 +797,7 @@ function initStudio(){
  canvas.addEventListener('pointerup',event=>{if(drag&&!drag.moved&&!event.altKey){
   const clicked=model().objects.find(o=>o.id===drag.id);
   const door=clicked?.attachTo?model().objects.find(o=>o.id===clicked.attachTo):clicked;
-  if(door&&doorOpening(door))toggleDoor(door.id);
+  if(door&&(door.foldRoot||doorOpening(door)))toggleDoor(door.id);
  }
  if(drag?.mode==='move'&&drag.moved){let o=model().objects.find(v=>v.id===drag.id);if(o){if(o.technicalSpec){const old=[o.localX,o.localY];linkedAccessoryLocal(o);const owner=model().objects.find(x=>x.id===o.attachTo);if(technicalPatternValid(owner,o.technicalSpec,o.localX,o.localY,o.id)){o.localX=old[0];o.localY=old[1];linkedAccessoryPosition(o);toast('Posizione non valida per i tagli del vetro')}}else magnetic(o)}drawScene();renderProps();queueAutosave()}drag=null});
  canvas.addEventListener('pointercancel',()=>{drag=null});
@@ -645,6 +809,7 @@ function add(kind){remember();let data={glass:[1000,1700,10],wall:[1900,2300,150
 function accessory(kind){let owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!owner)return toast('Seleziona prima un vetro');remember();let o=object('accessory',kind,owner.x+owner.w*.28,owner.y,owner.z+owner.d/2+25,50,kind==='maniglia'?220:65,35,{accessoryType:kind,attachTo:owner.id});model().objects.push(o);U.selected=o.id;refresh(true)}
 function edit(id,key,val){
  const o=model().objects.find(o=>o.id===id);if(!o)return;
+ if((o.curve||o.trayRadius)&&['w','h','d','x','y','z','rx','ry','rz'].includes(key))return toast('Modifica le misure partendo dal modello semicircolare');
  const value=key==='name'?val:N(val),oldValue=o[key];
  if(key!=='name'&&!Number.isFinite(value))return toast('Valore numerico non valido');
  if(key==='mountScale'&&(value<.1||value>100000))return toast('La scala GLB deve essere tra 0,1% e 100000%');
@@ -668,8 +833,9 @@ function edit(id,key,val){
 function duplicate(){let o=model().objects.find(o=>o.id===U.selected);if(!o)return;if(o.technicalSpec)return toast('Per duplicare una lavorazione tecnica, seleziona la lastra e inserisci una nuova istanza dalla libreria');remember();let copy=structuredClone(o);copy.id=uid();copy.x+=140;copy.name+=' (copia)';model().objects.push(copy);U.selected=copy.id;refresh(true)}
 function remove(){if(!U.selected)return;remember();model().objects=model().objects.filter(o=>o.id!==U.selected&&o.attachTo!==U.selected);U.selected=null;refresh(true)}
 function applyModernScene(){remember();for(const o of model().objects){if(o.kind==='wall')o.finish='concrete';if(['floor','balcony'].includes(o.kind))o.finish='stone';if(o.kind==='stair')o.finish='wood'}refresh(true)}
-function finish(f){let o=model().objects.find(o=>o.id===U.selected);if(!o)return toast('Seleziona prima un elemento');remember();o.finish=f;refresh(true)}
+function finish(f){let o=model().objects.find(o=>o.id===U.selected);if(!o||!['wall','floor','stair','balcony'].includes(o.kind))return toast('Seleziona un muro, un pavimento, un balcone o un gradino');remember();o.finish=f;refresh(true)}
 function shapeEditor(){
+ if(VSTechBridge.selected()?.curve)return toast('La sagoma piana non è disponibile per il vetro curvo');
  let o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
  if(!o){o=model().objects.find(o=>['glass','mirror'].includes(o.kind));if(o)U.selected=o.id;}
  if(!o)return toast('Il progetto non contiene lastre: aggiungi o seleziona prima un vetro.');
@@ -738,7 +904,7 @@ function switchMode(){viewMode=viewMode==='real'?'technical':'real';$id('vsVisua
 function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='dxf-panel')exportDXF(U.selected??null);if(v==='workshop')exportWorkshopSheet();if(v==='gltf')downloadGLTF()}
 function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-vstab]').forEach(b=>b.classList.toggle('active',b.dataset.vstab===U.tab))}
 function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
-window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
+window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},orient:orientTechnicalItem,validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
 window.VSCADBridge={
  panels:()=>glassPanels().map(({id,name})=>({id,name})),
  selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch}},
@@ -762,6 +928,7 @@ exportDXF=function(panelId){
  const line=(a,b,layer)=>rows.push('0','LINE','8',layer,'10',String(a[0]),'20',String(a[1]),'30','0','11',String(b[0]),'21',String(b[1]),'31','0');
  for(const [i,o] of panels.entries()){
   if(panelId!==undefined&&o.id!==panelId)continue;
+  if(o.curve)return toast('DXF piano non disponibile per la lastra curva '+o.name);
   let derived;
   try{derived=technicalGlassShape(o)}catch(error){return toast('Esportazione DXF bloccata per '+o.name+': '+error.message)}
   const layer='LASTRA_'+(i+1),pts=derived.outline;
@@ -779,6 +946,7 @@ function exportWorkshopSheet(){
  if(!panels.length)return toast('Nessuna lastra da esportare');
  const sections=[];
  for(const [i,panel] of panels.entries()){
+  if(panel.curve)return toast('Scheda piana non disponibile per la lastra curva '+panel.name);
   let shape;
   try{shape=technicalGlassShape(panel)}catch(error){return toast('Scheda bloccata per '+panel.name+': '+error.message)}
   const holes=technicalHoles(panel);
