@@ -22,7 +22,7 @@ const catalog={
  vetrina:[['V01','Vetrina modulare','modulare',3],['V02','Vetrina con ingresso','ingresso',3],['V03','Vetrina angolare','angolo',2]],
  specchio:[['M01','Specchio rettangolare','rettangolo',1],['M02','Specchio circolare','circolare',1],['M03','Specchio ad arco','arco',1]]};
 const labels={scala:'Scale',parapetto:'Parapetti e ringhiere',doccia:'Box doccia',porta:'Porte',vetrina:'Vetrine',specchio:'Specchi'};
-let U={tab:'models',right:true,drawer:true,selected:null,mode:'orbit',snap:true,theme:'modern',cameraTarget:null,mouse:null,shape:null,undo:[],redo:[],timer:null,autosave:null,loading:false};
+let U={tab:'objects',right:true,drawer:true,selected:null,mode:'orbit',snap:true,theme:'modern',cameraTarget:null,mouse:null,shape:null,undo:[],redo:[],timer:null,autosave:null,loading:false};
 const object=(kind,name,x,y,z,w,h,d,ext={})=>({id:uid(),kind,name,x:mm(x),y:mm(y),z:mm(z),w:mm(w),h:mm(h),d:mm(d),ry:0,rx:0,rz:0,...ext});
 function model(){let m=S.current.model;m.objects??=[];m.studio??={category:'doccia',template:'D01',settings:{}};return m}
 function remember(){if(!S.current)return;U.undo.push(JSON.stringify({objects:model().objects,studio:model().studio}));if(U.undo.length>80)U.undo.shift();U.redo=[]}
@@ -216,7 +216,7 @@ function build(cat,t){const a=[],code=t[0],kind=t[2],fix=t[3],cfg={category:cat,
  if(cat==='vetrina'){let w=3600,h=2450,n=N(fix,3),pw=w/n;for(let i=0;i<n;i++){let x=-w/2+pw*(i+.5),p=add('glass',kind==='ingresso'&&i===1?'Porta ingresso':'Pannello fisso '+(i+1),x,h/2,0,pw-15,h-20,10);if(kind==='ingresso'&&i===1)add('accessory','Maniglia',x+pw*.3,1050,30,25,200,35,{accessoryType:'maniglia',attachTo:p.id})}for(let i=0;i<=n;i++)add('profile','Montante '+i,-w/2+i*pw,h/2,0,30,h,55);add('profile','Traverso superiore',0,h,0,w+40,35,55);if(kind==='angolo')add('glass','Vetrina laterale',w/2,h/2,-500,1000,h,10,{ry:90})}
  if(cat==='specchio'){add('wall','Parete rivestita',0,1050,-55,2200,2100,90,{finish:'stone'});let o=add('mirror','Specchio',0,950,0,1100,1700,6);if(kind==='circolare'||kind==='arco')o.shape=kind==='arco'?[[0,0],[1100,0],[1100,1300],[1050,1510],[900,1650],[550,1700],[200,1650],[50,1510],[0,1300]]:Array.from({length:48},(_,i)=>[550+540*Math.cos(2*Math.PI*i/48),850+840*Math.sin(2*Math.PI*i/48)]);}
  return {objects:a,studio:cfg}}
-function choose(cat,code){const entry=catalog[cat]?.find(t=>t[0]===code);if(!entry)return;doorPreviews.clear();remember();const result=build(cat,entry);model().objects=result.objects;model().studio=result.studio;model().type=cat;U.selected=null;U.tab='models';U.drawer=true;refresh(true);frameModel()}
+function choose(cat,code){const entry=catalog[cat]?.find(t=>t[0]===code);if(!entry)return;doorPreviews.clear();remember();const result=build(cat,entry);model().objects=result.objects;model().studio=result.studio;model().type=cat;U.selected=null;U.tab='objects';U.drawer=true;refresh(true);frameModel()}
 function blank(){remember();model().objects=[];model().studio={category:'libero',template:null,settings:{}};U.selected=null;refresh(true)}
 function refresh(modelChanged=false){if(modelChanged)drawScene();renderSidebar();renderProps();updatePricing();updateTitle();queueAutosave()}
 function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=setTimeout(async()=>{if(U.loading||!['designer','cad'].includes(S.view))return;try{U.loading=true;await saveCurrent()}catch(e){console.warn('Autosave:',e)}finally{U.loading=false}},5000)}
@@ -225,15 +225,61 @@ const architecturalFinishes=[
  ['ceramic','Ceramica bianca','#e4e4df'],['concrete','Cemento architettonico','#969e9d'],['stone','Pietra naturale','#a8a093'],
  ['wood','Rovere','#b88c64'],['marble','Marmo chiaro','#d3d2d1']
 ];
-function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p><button class="btn primary" style="width:100%;margin-bottom:10px" onclick="VSTech.picker()">+ Inserisci dalla libreria tecnica</button>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino.</p>
+function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>elementTree(),materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino.</p>
  <div class="vsModels">${architecturalFinishes.map(([key,label,color])=>`<button class="vsModel" onclick="VS.finish('${key}')">
  <span style="flex:0 0 24px;height:24px;border-radius:5px;background:${color};border:1px solid #9ba7a9" aria-hidden="true"></span><span>${label}</span></button>`).join('')}</div>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
+function selectedPanel(){
+ const selected=model().objects.find(o=>o.id===U.selected);
+ return glassPanels().find(panel=>panel.id===(selected?.attachTo||selected?.id));
+}
+function elementTree(){
+ const objects=model().objects;
+ const panels=glassPanels();
+ const row=(o,label)=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" aria-pressed="${U.selected===o.id}" data-element="${esc(o.id)}" onclick="VS.select(this.dataset.element)">${esc(label)}</button>`;
+ const grouped=panels.map((panel,i)=>{
+  const accessories=objects.filter(o=>o.attachTo===panel.id);
+  return `<div class="vsTreeGroup">${row(panel,`${i+1}. ${panel.name}`)}
+  <div class="vsTreeChildren">${accessories.map(o=>row(o,fittingLabel(o))).join('')}</div></div>`;
+ }).join('');
+ const other=objects.filter(o=>!panels.some(panel=>panel.id===o.id||panel.id===o.attachTo));
+ return `<h3>Elementi</h3><div class="vsTree">${grouped}${other.length?`<details><summary>Ambiente e altri elementi</summary><div class="vsTree">${other.map(o=>row(o,o.name)).join('')}</div></details>`:''}</div>`;
+}
+function fittingLabel(o){
+ return o.technicalSpec?`${o.name} · ${N(o.localY).toFixed(1)} mm`:o.name;
+}
+function fittingDimensions(o){
+ const d=o?.technicalSpec?.sourceDimensions;
+ if(!d)return '';
+ return [
+  ['diameter','Ø'],['centerSpacing','Interasse'],['opening','Apertura'],['notchDepth','Profondità']
+ ].filter(([key])=>Number.isFinite(d[key])).map(([key,label])=>`${label} ${d[key]} mm`).join(' · ');
+}
+function moveFittingTo(id,x,y){
+ const o=model().objects.find(o=>o.id===id&&o.technicalSpec);
+ const panel=glassPanels().find(panel=>panel.id===o?.attachTo);
+ if(!panel||!Number.isFinite(x)||!Number.isFinite(y))return 'Inserisci quote valide';
+ const [dx,dy,dz]=panelVector(panel,x-panel.w/2,y-panel.h/2,panel.d/2);
+ const error=moveTechnicalAccessory(o,{x:panel.x+dx,y:panel.y+dy,z:panel.z+dz});
+ refresh(true);
+ return error;
+}
+function editFitting(id,form){
+ const x=form.elements.x.valueAsNumber,y=form.elements.y.valueAsNumber;
+ const error=moveFittingTo(id,x,y);
+ if(error)toast(error);
+}
 function renderProps(){
  const el=$id('vsProps');
  if(!el)return;
  const o=model().objects.find(object=>object.id===U.selected);
  if(!o){el.innerHTML='<p class="small">Seleziona un elemento nella scena.</p>';return;}
  const panel=['glass','mirror'].includes(o.kind);
+ const edges={left:'Sinistro',right:'Destro',top:'Superiore',bottom:'Inferiore'};
+ const fitting=o.technicalSpec?`<p class="small">Bordo · ${edges[o.mountEdge]||'Posizionamento libero'}</p>
+ <form onsubmit="event.preventDefault();VS.editFitting('${o.id}',this)"><div class="vsFieldGrid">
+ <label>Dal bordo sinistro (mm)<input class="field" name="x" type="number" step="any" value="${N(o.localX)}" ${['left','right'].includes(o.mountEdge)?'readonly':''}></label>
+ <label>Dal basso (mm)<input class="field" name="y" type="number" step="any" value="${N(o.localY)}" ${['top','bottom'].includes(o.mountEdge)?'readonly':''}></label></div>
+ <button class="btn primary">Sposta</button></form><p class="small">${fittingDimensions(o)}</p>`:'';
  const fields=keys=>keys.map(([key,label])=>`<label>${label}<input class="field" type="number" step="0.1" value="${N(o[key],key==='mountScale'?100:0)}" onchange="VS.edit('${o.id}','${key}',this.value)"></label>`).join('');
  const finishes=['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica
  <select class="field" onchange="VS.finish(this.value)">${architecturalFinishes.map(([value,label])=>`<option value="${value}" ${o.finish===value?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
@@ -248,20 +294,32 @@ function renderProps(){
  const hingeFit=o.accessoryType==='cerniera'&&o.technicalSpec?(fit==='glb'?'Modello originale · vetro centrato tra le ganasce.':fit==='glb-review'?'Modello originale · verifica l’allineamento delle ganasce.':'Anteprima con ganasce di riferimento.'):'';
  const mounting=o.technicalSpec?`<p class="small">Regolazione del modello 3D rispetto al fissaggio. Le lavorazioni restano nella posizione quotata.</p>${hingeFit?`<p class="small">${hingeFit}</p>`:''}<div class="vsFieldGrid">${fields([['mountX','Offset modello X (mm)'],['mountY','Offset modello Y (mm)'],['mountZ','Distanza dal vetro (mm)'],['mountSpin','Rotazione GLB sul vetro (°)'],['mountYaw','Rotazione GLB verticale (°)'],['mountScale','Scala GLB (%)']])}</div>`:'';
  el.innerHTML=`<label class="label">Nome<input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"></label>
- <div class="vsFieldGrid">${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
+ ${fitting}
+ <div class="vsFieldGrid" ${o.technicalSpec?'hidden':''}>${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
  ${hingeSide}${motionControls}
- ${panel?'<div class="actions"><button class="btn primary" onclick="VSTech.picker()">Aggiungi accessorio</button><button class="btn" onclick="VS.shapeEditor()">Sagoma 2D</button></div>':''}
+ ${panel?'<div class="actions"><button class="btn primary" onclick="VSTech.picker()">Aggiungi accessorio</button></div>':''}
  <details ${toolsOpen?'open':''}><summary>Strumenti avanzati</summary>
  <div class="vsFieldGrid">${fields([['x','X (mm)'],['y','Y (mm)'],['z','Z (mm)'],['rx','Rotazione X (°)'],['ry','Rotazione Y (°)'],['rz','Rotazione Z (°)']])}</div>
  ${openingFields}${mounting}${finishes}<div class="actions"><button class="btn" onclick="VS.duplicate()">Duplica</button><button class="btn danger" onclick="VS.remove()">Elimina</button></div>
  </details>`;
 }
-function updateTitle(){let el=$id('vsTitle');if(el)el.textContent=S.current?.title||'Nuovo progetto'}
+let savedProjectState=null,savingProject=false,saveFailed=false;
+function projectSignature(p=S.current){
+ return p?JSON.stringify([p.title,p.client_id,p.status,p.model]):null;
+}
+function saveState(state,signature){
+ if(state==='saving'){savingProject=true;saveFailed=false;}
+ if(state==='saved'){savingProject=false;saveFailed=false;savedProjectState=signature;}
+ if(state==='error'){savingProject=false;saveFailed=true;}
+ const label=savingProject?'Salvataggio…':saveFailed?'Salvataggio non riuscito':S.current?.id&&projectSignature()===savedProjectState?'Salvato':'Modifiche da salvare';
+ for(const id of ['vsSaveState','cadSaveState']){const el=$id(id);if(el)el.textContent=label;}
+}
+function updateTitle(){saveState();let el=$id('vsTitle');if(el)el.textContent=S.current?.title||'Nuovo progetto'}
 function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),material=area*180,accessories=m.objects.filter(o=>o.kind==='accessory').reduce((sum,o)=>sum+N(o.technicalUnitPrice,35),0),cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
 function updatePricing(){let el=$id('vsQuote');if(!el)return;let p=pricingModel();el.innerHTML=`<div class="vsMetric">Vetro <b>${p.area.toFixed(2)} m²</b></div><div class="vsMetric">Materiali <b>${eur(p.material)}</b></div><div class="vsMetric">Accessori <b>${eur(p.accessories)}</b></div><div class="vsMetric">Imponibile <b>${eur(p.net)}</b></div><div class="vsMetric">Totale IVA inclusa <strong>${eur(p.total)}</strong></div><p class="small">Prezzi indicativi: da configurare nei listini della vetreria.</p>`}
 let activeProject;
-function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';if(activeProject!==S.current){activeProject=S.current;U.undo=[];U.redo=[];U.selected=null}}
-function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="navigate('cad')">CAD 2D</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn primary" onclick="VS.tab('models')">Scegli categoria e modello</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['accessories','⚙','Accessori'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.shapeEditor()" title="Modifica la lastra selezionata in 2D">Modifica lastra</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">€ Preventivo</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic sull’anta per aprirla · Alt + trascina per ruotare</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Preventivo</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}</details><hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></aside></div></div>`}
+function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';if(activeProject!==S.current){activeProject=S.current;savedProjectState=S.current.id?projectSignature():null;savingProject=false;saveFailed=false;U.undo=[];U.redo=[];U.selected=null}}
+function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small><span id="vsSaveState" class="small" role="status"></span></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="VS.shapeEditor()">2D</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><button class="btn" onclick="VS.downloadDxf()">Scarica DXF</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">Commessa</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic sull’anta per aprirla · Alt + trascina per ruotare</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Commessa</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}<hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title();VS.saveState()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value;VS.saveState()"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></details></aside></div></div>`}
 // Three.js rendering. Single source of truth: model().objects.
 function glassPanels(){return model().objects.filter(o=>['glass','mirror'].includes(o.kind));}
 const cadColors=['#126776','#a24921','#5455a0','#39764b','#945173','#68503a'];
@@ -325,11 +383,11 @@ function cadPage(){
  <div class="grid2">${panels.map(cadPanelCard).join('')}</div>
  </div>`;
 }
-function openCad(id=$id('vsCadPanel')?.value){
+function openCad(id=$id('vsCadPanel')?.value,fittingId=null){
  const panel=glassPanels().find(o=>o.id===id);
  if(!panel)return;
  if(panel.curve)return toast('Lastra curva: aprila in 3D per visualizzare il raggio');
- select(id);window.VSCAD2D.open();
+ select(id);window.VSCAD2D.open(fittingId);
 }
 function show3D(id){
  if(id)select(id);
@@ -1213,7 +1271,7 @@ function initStudio(){
  scene.add(group);
  V={studio:true,renderer,scene,camera,group,environment,floor,backdrop,sun};
  U.cat=model().studio.category in catalog?model().studio.category:'doccia';
- renderSidebar();renderProps();updatePricing();drawScene();frameModel();
+ renderSidebar();renderProps();updatePricing();saveState();drawScene();frameModel();
  const ray=new Three.Raycaster(),mouse=new Three.Vector2();let drag=null;
  function pick(event){
   const rect=canvas.getBoundingClientRect();
@@ -1320,14 +1378,13 @@ function remove(){if(!U.selected)return;remember();model().objects=model().objec
 function applyModernScene(){remember();for(const o of model().objects){if(o.kind==='wall')o.finish='concrete';if(['floor','balcony'].includes(o.kind))o.finish='stone';if(o.kind==='stair')o.finish='wood'}refresh(true)}
 function finish(f){let o=model().objects.find(o=>o.id===U.selected);if(!o||!['wall','floor','stair','balcony'].includes(o.kind))return toast('Seleziona un muro, un pavimento, un balcone o un gradino');remember();o.finish=f;refresh(true)}
 function shapeEditor(){
- const fitting=model().objects.find(o=>o.id===U.selected&&o.technicalSpec);
- if(fitting)select(fitting.attachTo);
- if(VSTechBridge.selected()?.curve)return toast('La sagoma piana non è disponibile per il vetro curvo');
- let o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
- if(!o){o=model().objects.find(o=>['glass','mirror'].includes(o.kind));if(o)U.selected=o.id;}
- if(!o)return toast('Il progetto non contiene lastre: aggiungi o seleziona prima un vetro.');
- if(window.VSCAD2D){window.VSCAD2D.open();return;}
- U.shape={id:o.id,vertices:structuredClone(o.shape||[[0,0],[o.w,0],[o.w,o.h],[0,o.h]]),holes:structuredClone(o.holes||[]),snap:true,grid:10,zoom:1};shapeModal();
+ const panel=selectedPanel()||glassPanels()[0];
+ if(!panel)return toast('Aggiungi una lastra per aprire il CAD 2D');
+ openCad(panel.id,U.selected===panel.id?null:U.selected);
+}
+function downloadDxf(id=selectedPanel()?.id){
+ if(id)return exportDXF(id);
+ return exportDXF();
 }
 function shapeModal(){
  openModal(`<div class="vsCadHead"><div><h3>Disegno tecnico 2D · Lastra</h3><p class="small">Quote in millimetri. Clicca e trascina un vertice oppure inserisci le coordinate. Doppio clic su un lato per creare un nuovo punto.</p></div></div>
@@ -1388,9 +1445,9 @@ function toggleRight(){document.body.classList.toggle('vsRightClosed')}
 function toggleQuote(){document.body.classList.remove('vsRightClosed');$id('vsQuoteDetails').open=!$id('vsQuoteDetails').open}
 function cameraPreset(k){const p={iso:[.65,.35],front:[0,0],side:[Math.PI/2,0],top:[0,Math.PI/2-.02]}[k]||[.65,.35];orbit.az=p[0];orbit.el=p[1];positionCamera()}
 function switchMode(){viewMode=viewMode==='real'?'technical':'real';$id('vsVisualBtn').textContent=viewMode==='real'?'✦ Realistico':'▦ Tecnico';drawScene()}
-function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='dxf-panel')exportDXF(U.selected??null);if(v==='workshop')exportWorkshopSheet();if(v==='gltf')downloadGLTF()}
+function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='dxf-panel')exportDXF(selectedPanel()?.id??null);if(v==='workshop')exportWorkshopSheet();if(v==='gltf')downloadGLTF()}
 function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-vstab]').forEach(b=>b.classList.toggle('active',b.dataset.vstab===U.tab))}
-function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
+function cost(k,v){model()[k]=N(v);updatePricing();saveState();queueAutosave()}
 window.VSTechBridge={mounted(ownerId){
  return model().objects.filter(o=>o.attachTo===ownerId&&o.technicalId&&o.technicalSpec).map(o=>({
   existingId:o.id,x:o.localX,y:o.localY,item:{id:o.technicalId,name:o.name,code:o.technicalCode,category:o.accessoryType,
@@ -1398,6 +1455,11 @@ window.VSTechBridge={mounted(ownerId){
  }));
 },selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},orient:orientTechnicalItem,validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
 window.VSCADBridge={
+ fittings(panelId){return model().objects.filter(o=>o.attachTo===panelId&&o.technicalSpec).map(o=>({
+  id:o.id,name:o.name,label:fittingLabel(o),x:o.localX,y:o.localY,edge:o.mountEdge,dimensions:fittingDimensions(o),
+  points:(o.technicalSpec.cutouts||[]).flat()
+ }));},
+ moveFitting:moveFittingTo,
  panels:()=>glassPanels().map(({id,name})=>({id,name})),
  selected(excluded=null){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o,[],excluded);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o,excluded),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch,technicalProfile:shape.edgeNotch?technicalContourProfile(o,shape.outline):null}},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
@@ -1409,7 +1471,7 @@ window.VSCADBridge={
  else delete o.cadProfile;
  refresh(true);return {ok:true};},
 };
-window.VS={toggleDoor,setHingeSide,setOpening,cadPage,openCad,show3D,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
+window.VS={downloadDxf,editFitting,saveState,toggleDoor,setHingeSide,setOpening,cadPage,openCad,show3D,addCadPanel,choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
 // Existing SaaS remains untouched. Only the old editor entrypoints are replaced.
 designer=designerHTML;init3d=initStudio;rebuild3d=drawScene;camPreset=cameraPreset;calc=pricingModel;
 exportDXF=function(panelId){
@@ -1474,7 +1536,7 @@ function exportWorkshopSheet(){
 }
 exportCSV=function(){const p=pricingModel(),rows=[['Voce','Valore'],['Superficie vetro m²',p.area.toFixed(2)],['Materiali €',p.material.toFixed(2)],['Accessori €',p.accessories.toFixed(2)],['Imponibile €',p.net.toFixed(2)],['IVA €',p.tax.toFixed(2)],['Totale €',p.total.toFixed(2)]];download('distinta-'+safeFile(S.current.title)+'.csv','\uFEFF'+rows.map(r=>r.map(v=>String(v)).join(';')).join('\r\n'),'text/csv')};
 const style=document.createElement('style');style.textContent=`
-.cadPanelCard{display:flex;align-items:center;gap:12px;text-align:left}.cadPanelCard svg{flex:none}body.vsActive{overflow:hidden}body.vsActive .sidebar,body.vsActive .top{display:none!important}body.vsActive .main{width:100%;height:100vh;overflow:hidden}body.vsActive #page{padding:0;max-width:none;margin:0;height:100vh;overflow:hidden}
+#vsSaveState{display:block;margin-top:3px;font-size:11px;color:#536f79}.vsFieldGrid[hidden]{display:none}.vsTreeGroup{display:grid;gap:4px}.vsTreeChildren{display:grid;gap:4px;margin-left:14px}.vsTreeRow[aria-pressed=true]{font-weight:700}.cadPanelCard{display:flex;align-items:center;gap:12px;text-align:left}.cadPanelCard svg{flex:none}body.vsActive{overflow:hidden}body.vsActive .sidebar,body.vsActive .top{display:none!important}body.vsActive .main{width:100%;height:100vh;overflow:hidden}body.vsActive #page{padding:0;max-width:none;margin:0;height:100vh;overflow:hidden}
 .vsWorkspace{display:flex;flex-direction:column;height:100vh;background:#edf1f2}.vsHeader{height:66px;background:white;border-bottom:1px solid #dce7e8;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;gap:12px}.vsLogo{font-weight:900;font-size:19px;white-space:nowrap}.vsLogo span{color:#22a994}.vsLogo small{font-size:12px;color:#8b9da6;margin-left:12px;font-weight:500}.vsHeadActions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.vsHeadActions .btn{font-size:12px;padding:9px 11px}.vsExport{width:105px;font-size:12px;padding:9px}.vsContent{flex:1;display:flex;min-height:0}.vsRail{width:76px;background:#103240;display:flex;flex-direction:column;gap:9px;padding:14px 6px;flex-shrink:0}.vsRail button{border:0;color:#daebed;background:transparent;padding:10px 2px;border-radius:10px;font-size:11px;cursor:pointer}.vsRail button b{display:block;font-size:22px;margin-bottom:6px}.vsRail button.active,.vsRail button:hover{background:#205b65}.vsLeft{width:288px;background:#fff;border-right:1px solid #dce6e8;padding:20px;overflow:auto;flex-shrink:0;transition:width .2s,padding .2s}.vsLeft h3{margin:0 0 12px}.vsCollapse{float:right;border:0;background:#e9f3f3;border-radius:7px;padding:6px 10px;cursor:pointer}.vsModels{display:grid;gap:7px;margin:12px 0}.vsModel{display:flex;justify-content:space-between;gap:10px;text-align:left;background:#f8fafb;border:1px solid #d9e4e7;padding:12px;border-radius:10px;cursor:pointer;color:#1b3a46}.vsModel:hover{border-color:#1a9c92;background:#ecfaf7}.vsModel strong{color:#15827b}.vsModel span{flex:1}.vsTree{display:grid;gap:5px}.vsTreeRow{background:white;text-align:left;border:1px solid #e0e8ea;padding:9px;border-radius:8px;cursor:pointer}.vsTreeRow small{float:right;color:#91a2a8}.vsTreeRow.active{background:#def5ef;border-color:#3aab9d}.vsViewport{position:relative;flex:1;min-width:0;overflow:hidden;background:#61737b}.vsViewport canvas{display:block;width:100%;height:100%;touch-action:none}.vsCam,.vsViewTools,.vsBottom{position:absolute;display:flex;gap:5px;padding:5px;background:#ffffffed;border-radius:10px;box-shadow:0 3px 12px #3343}.vsCam{top:14px;left:14px}.vsViewTools{top:14px;right:14px}.vsBottom{bottom:16px;right:16px}.vsCam button,.vsViewTools button,.vsBottom button{border:0;background:white;color:#203b48;padding:10px 12px;border-radius:7px;cursor:pointer;font-weight:650;font-size:12px}.vsCam button:hover,.vsViewTools button:hover,.vsBottom button:hover{background:#def5ef}.vsHelp{position:absolute;bottom:16px;left:12px;background:#14343bd9;color:white;padding:8px 12px;border-radius:8px;font-size:11px;pointer-events:none}.vsRight{width:300px;background:white;border-left:1px solid #dde7e9;padding:20px;overflow:auto;flex-shrink:0;transition:width .2s,padding .2s}.vsRightHead{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e0e8ea;padding-bottom:12px;margin-bottom:15px}.vsFieldGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.vsFieldGrid label{font-size:11px;font-weight:650;color:#70858e}.vsFieldGrid input{margin-top:4px;font-size:13px;padding:7px}.vsRight details{padding:15px 0;border-top:1px solid #e3ebed;margin-top:15px}.vsRight summary{font-weight:700;cursor:pointer}.vsMetric{display:flex;justify-content:space-between;gap:8px;margin:11px 0;font-size:12px}.vsMetric strong{color:#16756c}.vsLeftClosed .vsLeft,.vsRightClosed .vsRight{width:0;padding:0;border:0;overflow:hidden}.vsWorkspace .btn{white-space:nowrap}@media(max-width:1050px){.vsLeft{width:230px}.vsRight{width:255px}.vsHeader{height:auto;min-height:65px}.vsHeadActions{justify-content:flex-end}}@media(max-width:760px){.vsRail{width:52px}.vsRail button{font-size:9px}.vsLogo small{display:none}.vsLeft,.vsRight{position:absolute;z-index:5;top:66px;bottom:0;box-shadow:0 8px 24px #1234}.vsLeft{left:52px}.vsRight{right:0}.vsHeadActions .btn{font-size:10px}.vsHelp{display:none}}`;
 style.textContent+=`
 .vsCadHead h3{margin:0 0 6px}.vsCadTools,.vsCadActions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:12px 0}.vsCadTools label{font-size:12px}.vsCadTools select{width:auto;min-width:105px;padding:7px}.vsCadDrawing{height:min(53vh,460px);background:#eaf0f3;border:1px solid #cddce2;border-radius:12px;overflow:hidden}.vsCadDrawing svg{width:100%;height:100%;touch-action:none}.vsCadStatus{margin:8px 0;padding:9px 12px;border-radius:7px;font-size:12px}.vsCadOk{background:#e9f6f1;color:#146c57}.vsCadError{background:#fff0ed;color:#a13b26}.vsCadTabs{display:grid;grid-template-columns:1fr 1fr;gap:16px}.vsCadTabs h4{margin:5px 0}.vsCadField{display:flex;gap:6px;align-items:center;margin:5px 0}.vsCadField b{width:28px;font-size:11px}.vsCadField label{font-size:10px;color:#667f8a;flex:1}.vsCadField input{width:100%;padding:6px;font-size:12px;border:1px solid #c9dbe1;border-radius:6px}.vsCadField button{background:#fff;border:1px solid #dde6e8;border-radius:6px;cursor:pointer}.modal>div:has(.vsCadDrawing){width:min(1020px,98vw);max-height:94vh}@media(max-width:700px){.vsCadTabs{grid-template-columns:1fr}.vsCadDrawing{height:330px}}
