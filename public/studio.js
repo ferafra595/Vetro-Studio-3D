@@ -283,6 +283,8 @@ function renderProps(){
  const fields=keys=>keys.map(([key,label])=>`<label>${label}<input class="field" type="number" step="0.1" value="${N(o[key],key==='mountScale'?100:0)}" onchange="VS.edit('${o.id}','${key}',this.value)"></label>`).join('');
  const finishes=['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica
  <select class="field" onchange="VS.finish(this.value)">${architecturalFinishes.map(([value,label])=>`<option value="${value}" ${o.finish===value?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
+ const hardwareFinish=o.kind==='profile'||(o.kind==='accessory'&&!o.technicalId)?`<label class="label">Finitura ferramenta
+ <select class="field" onchange="VS.edit('${o.id}','metalFinish',this.value)">${Object.entries(metalFinishes).map(([key,{label}])=>`<option value="${key}" ${key===(o.metalFinish||'satin')?'selected':''}>${label}</option>`).join('')}</select></label>`:'';
  const toolsOpen=el.querySelector('details')?.open;
  const motion=panel?doorOpening(o):null;
  const hingeSide=motion?.type==='swing'?`<label class="label">Lato cerniere<select class="field" onchange="VS.setHingeSide('${o.id}',Number(this.value))">
@@ -296,7 +298,7 @@ function renderProps(){
  el.innerHTML=`<label class="label">Nome<input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"></label>
  ${fitting}
  <div class="vsFieldGrid" ${o.technicalSpec?'hidden':''}>${fields([['w','Larghezza (mm)'],['h','Altezza (mm)'],['d',panel?'Spessore (mm)':'Profondità (mm)']])}</div>
- ${hingeSide}${motionControls}
+ ${hardwareFinish}${hingeSide}${motionControls}
  ${panel?'<div class="actions"><button class="btn primary" onclick="VSTech.picker()">Aggiungi accessorio</button></div>':''}
  <details ${toolsOpen?'open':''}><summary>Strumenti avanzati</summary>
  <div class="vsFieldGrid">${fields([['x','X (mm)'],['y','Y (mm)'],['z','Z (mm)'],['rx','Rotazione X (°)'],['ry','Rotazione Y (°)'],['rz','Rotazione Z (°)']])}</div>
@@ -622,8 +624,87 @@ function curvedShowerGeometry(Three,o){
  mesh.translate(0,-o.h/2,0);
  return mesh;
 }
+const metalFinishes={
+ satin:{label:'Acciaio satinato',color:0x8a9196,metalness:.91,roughness:.32},
+ chrome:{label:'Cromato',color:0xb6b9be,metalness:1,roughness:.16},
+ black:{label:'Nero opaco',color:0x242629,metalness:.68,roughness:.43}
+};
+let brushedRoughness;
+function hardwareMaterial(Three,o){
+ const {color,metalness,roughness}=metalFinishes[o.metalFinish]||metalFinishes.satin;
+ const material=new Three.MeshStandardMaterial({color,metalness,roughness,envMapIntensity:1.15});
+ if((o.metalFinish||'satin')==='satin'){
+  if(!brushedRoughness){
+   const width=16,height=128,data=new Uint8Array(width*height*4);
+   for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const offset=(y*width+x)*4;
+    const value=210+Math.round(35*Math.sin(y*2.37)+8*Math.cos(x*.7+y*.12));
+    data.set([value,value,value,255],offset);
+   }
+   brushedRoughness=new Three.DataTexture(data,width,height,Three.RGBAFormat);
+   brushedRoughness.wrapS=brushedRoughness.wrapT=Three.RepeatWrapping;
+   brushedRoughness.magFilter=Three.LinearFilter;
+   brushedRoughness.minFilter=Three.LinearFilter;
+   brushedRoughness.needsUpdate=true;
+  }
+  material.roughnessMap=brushedRoughness;
+ }
+ return material;
+}
+function roundedSection(Three,length,height,depth,radius){
+ const u=depth/2,v=height/2,r=Math.min(radius,u*.8,v*.8);
+ const shape=new Three.Shape();
+ shape.moveTo(-u+r,-v);shape.lineTo(u-r,-v);
+ shape.quadraticCurveTo(u,-v,u,-v+r);shape.lineTo(u,v-r);
+ shape.quadraticCurveTo(u,v,u-r,v);shape.lineTo(-u+r,v);
+ shape.quadraticCurveTo(-u,v,-u,v-r);shape.lineTo(-u,-v+r);
+ shape.quadraticCurveTo(-u,-v,-u+r,-v);
+ const mesh=new Three.ExtrudeGeometry(shape,{depth:length,bevelEnabled:false,curveSegments:4});
+ mesh.rotateY(Math.PI/2);mesh.translate(-length/2,0,0);
+ return mesh;
+}
+function profileMesh(Three,o){
+ const group=new Three.Group();
+ group.position.set(N(o.x),N(o.y),N(o.z));
+ group.rotation.set(...['rx','ry','rz'].map(key=>Three.MathUtils.degToRad(N(o[key]))));
+ group.userData.studioId=o.id;
+ const metal=hardwareMaterial(Three,o);
+ const inset=new Three.MeshStandardMaterial({color:0x303438,metalness:.4,roughness:.56});
+ const polymer=new Three.MeshStandardMaterial({color:0x25292a,roughness:.82});
+ const unused=new Set([metal,inset,polymer]);
+ const w=Math.max(1,N(o.w)),h=Math.max(1,N(o.h)),d=Math.max(1,N(o.d));
+ const add=(name,length,height,depth,x,y,z,r,material=metal)=>{
+  const mesh=new Three.Mesh(roundedSection(Three,length,height,depth,r),material);
+  unused.delete(material);
+  mesh.name=name;mesh.userData.studioId=o.id;mesh.userData.hardwareFinish=true;
+  mesh.position.set(x,y,z);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);
+ };
+ const name=String(o.name||'');
+ const upperRail=/binario|guida superiore/i.test(name);
+ const handrail=/corrimano/i.test(name);
+ const base=/profilo base/i.test(name);
+ if(upperRail||base){
+  const side=Math.min(4,d/7,h/5),cap=Math.min(2,w/12),sign=upperRail?1:-1;
+  add('Anima del profilo',w,side,d,0,sign*(h-side)/2,0,.9);
+  for(const z of [-1,1]){
+   add('Fianco estruso',w,h-side,side,0,-sign*side/2,z*(d-side)/2,1.1);
+   if(w>20)add('Battuta interna',w-cap*2,Math.min(2,h/8),side,0,-sign*(h/2-side),z*(d-3*side)/2,.45,inset);
+  }
+  if(w>20)for(const x of [-1,1])add('Terminale',cap,h,d,x*(w-cap)/2,0,0,1.4,polymer);
+ }else if(handrail){
+  const radius=Math.min(h,d)*.32;
+  add('Impugnatura',w,h,d,0,0,0,radius);
+  if(w>18)for(const x of [-1,1])add('Chiusura corrimano',1.2,h*.93,d*.93,x*(w-.6)/2,0,0,radius, inset);
+ }else{
+  add('Profilo metallico',w,h,d,0,0,0,Math.min(2.5,w/4,h/4,d/4));
+ }
+ for(const material of unused)material.dispose();
+ return group;
+}
 function createMesh(o){
- const Three=T(),glass=['glass','mirror'].includes(o.kind),building=['wall','floor','stair','balcony'].includes(o.kind);let geo;
+ const Three=T();
+ if(o.kind==='profile')return profileMesh(Three,o);
+ const glass=['glass','mirror'].includes(o.kind),building=['wall','floor','stair','balcony'].includes(o.kind);let geo;
  if(o.curve||o.trayRadius)geo=curvedShowerGeometry(Three,o);
  else if(glass&&o.shape?.length>=3){
   const profile=new Three.Shape();
@@ -642,7 +723,7 @@ function createMesh(o){
   const source=makeSurfaceTexture(Three,o.finish||'concrete');const surface=o.finish||'concrete';
   const makeFace=(a,b)=>{const t=source.clone();t.needsUpdate=true;t.repeat.set(Math.max(.2,a/650),Math.max(.2,b/650));return new Three.MeshStandardMaterial({map:t,roughness:surface==='marble'?.3:.8,metalness:0,color:0xffffff})};
   material=[makeFace(o.d,o.h),makeFace(o.d,o.h),makeFace(o.w,o.d),makeFace(o.w,o.d),makeFace(o.w,o.h),makeFace(o.w,o.h)];
- }else material=new Three.MeshStandardMaterial({color:o.accessoryType==='borchia'?0x647275:0x323d42,metalness:.83,roughness:.24});
+ }else material=hardwareMaterial(Three,o);
  const mesh=new Three.Mesh(geo,material);mesh.position.set(N(o.x),N(o.y),N(o.z));mesh.rotation.set(N(o.rx)*Math.PI/180,N(o.ry)*Math.PI/180,N(o.rz)*Math.PI/180);mesh.castShadow=!glass;mesh.receiveShadow=true;mesh.userData.studioId=o.id;
  if(glass){const edges=new Three.LineSegments(new Three.EdgesGeometry(geo,12),new Three.LineBasicMaterial({color:viewMode==='technical'?0x217fa1:0x245c58,transparent:true,opacity:viewMode==='technical'?1:.48,depthTest:true}));mesh.add(edges)}
  if(o.kind==='floor'&&o.name==='Piatto doccia'){
@@ -654,13 +735,40 @@ function createMesh(o){
    const nose=new Three.Mesh(new Three.BoxGeometry(Math.max(20,o.w),7,9),new Three.MeshStandardMaterial({color:0x8a7766,roughness:.5}));nose.position.set(0,o.h/2-7,o.d/2-9);mesh.add(nose);
  }
  if(o.kind==='accessory'){
+   let usesBox=false;
    const type=o.accessoryType||'borchia';const group=new Three.Group();group.position.copy(mesh.position);group.rotation.copy(mesh.rotation);group.userData.studioId=o.id;
-   const metal=new Three.MeshStandardMaterial({color:0x839094,metalness:.86,roughness:.24});
-   const add=(g,x,y,z)=>{const m=new Three.Mesh(g,metal);m.position.set(x,y,z);m.castShadow=true;m.userData.studioId=o.id;group.add(m);return m};
+   const metal=material;
+   const add=(g,x,y,z,surface=metal)=>{const m=new Three.Mesh(g,surface);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;m.userData.studioId=o.id;m.userData.hardwareFinish=true;group.add(m);return m};
    if(type==='borchia'||type==='morsetto'){
-     let disc=add(new Three.CylinderGeometry(25,25,9,32),0,0,0);disc.rotation.x=Math.PI/2;
-     let cap=add(new Three.CylinderGeometry(14,14,12,32),0,0,11);cap.rotation.x=Math.PI/2;
-     let screw=add(new Three.CylinderGeometry(4,4,1,16),0,0,18);screw.rotation.x=Math.PI/2;
+     const glass=glassPanels().find(panel=>panel.id===o.attachTo);
+     const thickness=N(glass?.d,10),diameter=Math.max(22,Math.min(72,N(o.w,50)));
+     const gasket=new Three.MeshStandardMaterial({color:0x252728,roughness:.9});
+     const ring=(rTop,rBottom,length,z,surface=metal)=>{
+      const piece=add(new Three.CylinderGeometry(rTop,rBottom,length,36),0,0,z,surface);
+      piece.rotation.x=Math.PI/2;
+      return piece;
+     };
+     if(type==='borchia'){
+      const radius=diameter/2,stem=Math.max(8,N(o.d,28)*.5);
+      ring(radius*.78,radius*.78,stem,-stem/2-1);
+      ring(radius*.91,radius*.91,1.6,0,gasket);
+      ring(radius,radius*.94,4.6,3.1);
+      ring(radius*.23,radius*.23,1,5.7);
+      const recess=new Three.MeshStandardMaterial({color:0x24292c,roughness:.55,metalness:.56});
+      const socket=add(new Three.CylinderGeometry(radius*.12,radius*.12,.4,6),0,0,6.3,recess);
+      socket.rotation.x=Math.PI/2;
+     }else{
+      const height=Math.max(23,N(o.h,45));
+      const face=thickness/2;
+      add(roundedSection(Three,diameter,height,5,1.8),0,0,face+3.5);
+      add(roundedSection(Three,diameter,height,5,1.8),0,0,-face-3.5);
+      add(roundedSection(Three,diameter*.9,height*.88,1,.35),0,0,face+.5,gasket);
+      add(roundedSection(Three,diameter*.9,height*.88,1,.35),0,0,-face-.5,gasket);
+      add(roundedSection(Three,6,height,thickness+12,1),-diameter/2+3,0,0);
+      for(const y of [-height*.26,height*.26]){
+       add(new Three.CylinderGeometry(3,3,1.4,12),diameter*.28,y,face+6.5).rotation.x=Math.PI/2;
+      }
+     }
    }else if(type==='maniglia'){
      const owner=standardDoorHandleOwner(o);
      const length=Math.max(130,o.h||220);
@@ -691,8 +799,15 @@ function createMesh(o){
      add(new Three.BoxGeometry(50,90,4),-19,0,0).rotation.y=Math.PI/2;
    }else if(type==='cerniera'){
      add(new Three.BoxGeometry(35,70,9),-24,0,0);add(new Three.BoxGeometry(35,70,9),24,0,0);add(new Three.CylinderGeometry(6,6,76,20),0,0,9);
-   }else if(type==='barra'){add(new Three.CylinderGeometry(10,10,Math.max(o.w,200),24),0,0,0).rotation.z=Math.PI/2;}
-   else{group.add(mesh.clone());group.children[0].position.set(0,0,0)}
+   }else if(type==='barra'){
+    const length=Math.max(o.w,200),r=8;
+    add(new Three.CylinderGeometry(r,r,length,32),0,0,0).rotation.z=Math.PI/2;
+    for(const side of [-1,1]){
+     add(new Three.CylinderGeometry(r+2,r+2,22,32),side*(length/2-10),0,0).rotation.z=Math.PI/2;
+     add(new Three.CylinderGeometry(13,13,4,32),side*(length/2+2),0,0).rotation.z=Math.PI/2;
+    }
+   }
+   else{usesBox=true;group.add(mesh);mesh.position.set(0,0,0);mesh.rotation.set(0,0,0);}
    if(o.technicalSpec){
     const bounds=new Three.Box3();
     for(const child of group.children){
@@ -711,6 +826,7 @@ function createMesh(o){
     mount.position.set(dx+N(o.mountX),dy+N(o.mountY),N(o.mountZ));
     group.add(mount);
    }
+   if(!usesBox)geo.dispose();
    return group;
  }
  return mesh;
@@ -920,6 +1036,16 @@ function seatDoorHandle(o){
  o.x=mm(owner.x+px);o.y=mm(owner.y+py);o.z=mm(owner.z+pz);
  o.rx=N(owner.rx);o.ry=N(owner.ry);o.rz=N(owner.rz);
 }
+function seatStandardFastener(o){
+ if(o.technicalSpec||!['borchia','morsetto'].includes(o.accessoryType))return;
+ const glass=glassPanels().find(panel=>panel.id===o.attachTo);
+ if(!glass)return;
+ const [x,y]=panelVector(glass,o.x-glass.x,o.y-glass.y,o.z-glass.z,true);
+ const depth=o.accessoryType==='borchia'?glass.d/2+.8:0;
+ const [dx,dy,dz]=panelVector(glass,x,y,depth);
+ o.x=mm(glass.x+dx);o.y=mm(glass.y+dy);o.z=mm(glass.z+dz);
+ o.rx=N(glass.rx);o.ry=N(glass.ry);o.rz=N(glass.rz);
+}
 function doorParts(panel){
  return model().objects.filter(o=>o.id===panel.id||o.attachTo===panel.id||legacyHandle(o,panel));
 }
@@ -1032,6 +1158,7 @@ function drawScene(){
  for(const o of objects){
   if(o.technicalSpec)linkedAccessoryPosition(o);
   if(o.accessoryType==='maniglia')seatDoorHandle(o);
+  if(o.kind==='accessory')seatStandardFastener(o);
   const mesh=createMesh(o);
   mesh.position.z+=closedTrackOffset(o);
   group.add(mesh);renderMeshes.set(o.id,mesh);
@@ -1158,7 +1285,7 @@ function previewDoors(dt){
   if(!state.value&&!state.target)doorPreviews.delete(id);
  }
 }
-function highlight(){for(const [id,node] of renderMeshes){node.traverse(v=>{if(v.isMesh&&v.material?.emissive){v.material.emissive.setHex(id===U.selected?0x13798b:0);v.material.emissiveIntensity=id===U.selected?.24:0}})}}
+function highlight(){for(const [id,node] of renderMeshes){node.traverse(v=>{if(v.isMesh&&v.material?.emissive){v.material.emissive.setHex(id===U.selected?0x13798b:0);v.material.emissiveIntensity=id===U.selected?(v.userData.hardwareFinish?.065:.24):0}})}}
 function positionCamera(){if(!V?.studio)return;const target=orbit.target||new (T().Vector3)(0,1000,0);let camera=V.camera;camera.position.set(target.x+orbit.dist*Math.sin(orbit.az)*Math.cos(orbit.el),target.y+orbit.dist*Math.sin(orbit.el),target.z+orbit.dist*Math.cos(orbit.az)*Math.cos(orbit.el));camera.lookAt(target);camera.updateMatrixWorld()}
 function frameModel(){
  if(!V?.studio)return;
@@ -1364,8 +1491,10 @@ function resizeTechnicalAnchors(panel){
 function edit(id,key,val){
  const o=model().objects.find(o=>o.id===id);if(!o)return;
  if((o.curve||o.trayRadius)&&['w','h','d','x','y','z','rx','ry','rz'].includes(key))return toast('Modifica le misure partendo dal modello semicircolare');
- const value=key==='name'?val:N(val),oldValue=o[key];
- if(key!=='name'&&!Number.isFinite(value))return toast('Valore numerico non valido');
+ const textField=key==='name'||key==='metalFinish';
+ const value=textField?val:N(val),oldValue=o[key];
+ if(key==='metalFinish'&&!Object.hasOwn(metalFinishes,value))return toast('Finitura ferramenta non valida');
+ if(!textField&&!Number.isFinite(value))return toast('Valore numerico non valido');
  if(key==='mountScale'&&(value<.1||value>100000))return toast('La scala GLB deve essere tra 0,1% e 100000%');
  if(['w','h','d'].includes(key)&&value<=0)return toast('La dimensione deve essere maggiore di zero');
  if(key==='name'&&(!value||!String(value).trim()))return toast('Inserisci un nome valido');
