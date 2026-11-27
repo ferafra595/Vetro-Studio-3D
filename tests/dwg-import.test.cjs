@@ -263,4 +263,20 @@ test('GS-MS reale: profilo aperto LINE/ARC riconosciuto con dimensioni CAD misur
  const shape=glassModule.exports.difference([[0,0],[500,0],[500,400],[0,400]],[ring],clipModule.exports);
  assert.equal(shape.edgeNotch,true);
  assert.equal(shape.voids.length,0);
+ const geometryModule={exports:{}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/geometry-core.js'),'utf8'),{module:geometryModule});
+ const geometry=geometryModule.exports;
+ const exact=parsed.cuts.exactPaths[0];
+ const arcs=exact.bulges.flatMap((bulge,i)=>{
+  if(!bulge)return [];
+  const shift=([x,y])=>[x+offset,y+140];
+  return [{a:shift(exact.points[i]),b:shift(exact.points[(i+1)%exact.points.length]),bulge}];
+ });
+ for(const outline of [shape.outline,shape.outline.slice().reverse()]){
+  const profile=geometry.restoreContourArcs(outline,arcs);
+  const radii=profile.bulges.flatMap((bulge,i)=>!bulge?[]:[geometry.arcGeometry(profile.points[i],profile.points[(i+1)%profile.points.length],bulge).radius]);
+  assert.equal(radii.length,2);
+  assert.ok(radii.every(radius=>Math.abs(radius-4)<.001));
+ }
+
 });

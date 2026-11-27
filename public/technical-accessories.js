@@ -16,6 +16,8 @@ async function create(){const code=prompt('Codice articolo (es. GS-304)');if(cod
 async function open(id){try{const r=await request('/technical-accessories/'+id);S.selected=r.item;S.cuts=safeJson(r.item.cut_spec);detail()}catch(e){notify(e.message)}}
 const fileBadge=(type,meta)=>meta?.[type]?`<span class="tag">${type.toUpperCase()} caricato (${Math.round(meta[type].size/1024)} KB)</span>`:`<span class="small">${type.toUpperCase()} non presente</span>`;
 function detail(){let it=S.selected,el=$('techDetail');if(!el||!it)return;let meta=safeJson(it.model_meta),cuts=S.cuts;
+ const dim=cuts.sourceDimensions;
+ const dimensionText=dim?`<p class="small">Quote dal DWG · Ø ${E(dim.diameter)} mm · Interasse ${E(dim.centerSpacing)} mm · Apertura ${E(dim.opening)} mm · Centri dal bordo ${E(dim.centerDepth)} mm · Parete rettilinea a ${E(dim.notchDepth)} mm</p>`:'';
  el.innerHTML=`<div class="panel" style="margin:0"><div class="flex"><h3>${E(it.name)}</h3><span class="tag ${it.status==='approved'?'':'warning'}">${it.status==='approved'?'Approvato':'Da verificare'}</span></div>
  <div class="grid2"><label class="qfield">Codice<input id="taCode" value="${E(it.code)}"></label><label class="qfield">Nome<input id="taName" value="${E(it.name)}"></label><label class="qfield">Categoria<select id="taCat">${categories.map(([v,t])=>`<option value="${v}" ${it.category===v?'selected':''}>${t}</option>`).join('')}</select></label><label class="qfield">Produttore<input id="taManufacturer" value="${E(it.manufacturer||'')}"></label><label class="qfield">Spessore min. mm<input id="taMin" type="number" step="0.1" value="${it.glass_min}"></label><label class="qfield">Spessore max. mm<input id="taMax" type="number" step="0.1" value="${it.glass_max}"></label><label class="qfield">Prezzo €<input id="taPrice" type="number" step="0.01" value="${it.price}"></label></div>
  <h4>Importa accessorio e tagli (STEP + DWG)</h4>
@@ -29,7 +31,7 @@ function detail(){let it=S.selected,el=$('techDetail');if(!el||!it)return;let me
  <div style="border:1px solid #d5e5e9;border-radius:10px;padding:12px;margin-top:12px"><strong>File già archiviati</strong><div class="flex wrap" style="margin-top:8px">${files.map(ext=>`<span style="display:inline-flex;align-items:center;gap:8px;margin-right:10px">${fileBadge(ext,meta)}${meta?.[ext]?`<button class="btn" onclick="VSTech.download('${ext}')">Apri</button>`:''}</span>`).join('')}</div><p class="small" style="margin:8px 0 0">Per aggiornare un singolo allegato senza importare lavorazioni: ${files.map(ext=>`<label style="display:inline-block;margin-right:8px"><span>${ext.toUpperCase()}</span><input id="taFile_${ext}" type="file" accept=".${ext}" style="max-width:145px"><button class="btn" onclick="VSTech.upload('${ext}')">Carica</button></label>`).join('')}</p></div>
  <hr><div class="flex"><h4>Lavorazioni 2D associate</h4><button class="btn" onclick="VSTech.exportDxf()">Esporta DXF delle lavorazioni</button></div>
  <p class="small">Il DWG produce, quando riconosciuto e confermato, un DXF tecnico in millimetri con i tagli estratti. Verifica sempre le quote del produttore: non è un programma CNC.</p>
- <p class="small">Fori: <b>${cuts.holes?.length||0}</b> · Contorni interni: <b>${cuts.cutouts?.length||0}</b></p>
+ ${dimensionText}<p class="small">Fori: <b>${cuts.holes?.length||0}</b> · Contorni interni: <b>${cuts.cutouts?.length||0}</b></p>
  <div class="grid2"><label class="qfield">Foro: X relativo mm<input type="number" id="taHX" value="0" step="0.1"></label><label class="qfield">Y relativo mm<input type="number" id="taHY" value="0" step="0.1"></label><label class="qfield">Diametro mm<input type="number" id="taHD" value="14" step="0.1"></label><div class="actions" style="align-self:end"><button class="btn" onclick="VSTech.addHole()">+ Aggiungi foro</button></div></div>
  <div id="taCuts">${cuts.holes.map((h,i)=>`<div class="item">Foro ${i+1}: X ${number(h.x).toFixed(1)} · Y ${number(h.y).toFixed(1)} · Ø ${(h.r*2).toFixed(1)} mm <button class="btn" onclick="VSTech.dropHole(${i})">Rimuovi</button></div>`).join('')}</div><div id="taCutouts">${cuts.cutouts.map((poly,i)=>`<div class="item">Contorno ${i+1}: ${poly.length} vertici · possibile taglio interno <button class="btn" onclick="VSTech.dropCutout(${i})">Escludi</button></div>`).join('')}</div>
  <div class="grid2"><label class="qfield">Spostamento X dei tagli (mm)<input id="taMoveX" type="number" value="0" step="0.1"></label><label class="qfield">Spostamento Y dei tagli (mm)<input id="taMoveY" type="number" value="0" step="0.1"></label></div><button class="btn" onclick="VSTech.movePattern()">Applica spostamento relativo</button><div id="taDrawing" style="max-width:500px;margin-top:10px"></div>
@@ -40,8 +42,16 @@ function detail(){let it=S.selected,el=$('techDetail');if(!el||!it)return;let me
 function draw(){const el=$('taDrawing');if(!el)return;const h=S.cuts.holes||[],poly=S.cuts.cutouts||[];let coords=[];for(const a of h){coords.push([a.x-a.r,a.y-a.r],[a.x+a.r,a.y+a.r])}for(const p of poly)coords.push(...p);const xs=coords.map(p=>p[0]),ys=coords.map(p=>p[1]);const lowX=Math.min(0,...xs)-30,highX=Math.max(100,...xs)+30,lowY=Math.min(0,...ys)-30,highY=Math.max(100,...ys)+30;const scale=Math.min(400/(highX-lowX),220/(highY-lowY));const pos=p=>[(p[0]-lowX)*scale+20,260-(p[1]-lowY)*scale-20];el.innerHTML=`<svg viewBox="0 0 460 280" style="background:#f0f5f7;width:100%;border:1px solid #dae4e6;border-radius:9px"><path d="M20 250H440 M20 250V12" stroke="#a2afb6" fill="none"/>${poly.map(points=>`<polygon points="${points.map(p=>pos(p).join(',')).join(' ')}" fill="#dfeafa" stroke="#176b7a" stroke-width="2"/>`).join('')}${h.map(a=>{const c=pos([a.x,a.y]);return `<circle cx="${c[0]}" cy="${c[1]}" r="${a.r*scale}" stroke="#c35e35" stroke-width="2" fill="#fff"/>`}).join('')}</svg><p class="small">Vista relativa al punto di fissaggio (0,0). Dimensioni in mm.</p>`}
 function addHole(){const x=number($('taHX').value),y=number($('taHY').value),d=number($('taHD').value);if(d<=0||d>600)return notify('Diametro non valido');S.cuts.holes.push({x,y,r:d/2});detail()}
 function dropHole(i){S.cuts.holes.splice(i,1);detail()}
-function dropCutout(i){S.cuts.cutouts.splice(i,1);detail()}
-function movePattern(){const dx=Number($('taMoveX').value),dy=Number($('taMoveY').value);if(!Number.isFinite(dx)||!Number.isFinite(dy))return notify('Coordinate non valide');for(const h of S.cuts.holes){h.x=+(h.x+dx).toFixed(2);h.y=+(h.y+dy).toFixed(2)}S.cuts.cutouts=S.cuts.cutouts.map(poly=>poly.map(q=>[+(q[0]+dx).toFixed(2),+(q[1]+dy).toFixed(2)]));detail()}
+function dropCutout(i){S.cuts.cutouts.splice(i,1);S.cuts.exactPaths?.splice(i,1);delete S.cuts.sourceDimensions;detail()}
+function movePattern(){
+ const dx=Number($('taMoveX').value),dy=Number($('taMoveY').value);
+ if(!Number.isFinite(dx)||!Number.isFinite(dy))return notify('Coordinate non valide');
+ const translate=([x,y])=>[+(x+dx).toFixed(4),+(y+dy).toFixed(4)];
+ for(const h of S.cuts.holes)[h.x,h.y]=translate([h.x,h.y]);
+ S.cuts.cutouts=S.cuts.cutouts.map(poly=>poly.map(translate));
+ if(S.cuts.exactPaths)S.cuts.exactPaths=S.cuts.exactPaths.map(path=>({...path,points:path.points.map(translate)}));
+ detail();
+}
 async function save(status){
  const t=S.selected;if(!t)return;
  const noCut=!S.cuts.holes.length&&!S.cuts.cutouts.length;
@@ -106,7 +116,7 @@ function loadBrowserEngine(){
 async function loadDWGEngine(){
  if(window.VSDWGImport)return window.VSDWGImport;
  await new Promise((resolve,reject)=>{
-  const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R13-dxf-arc-20261123';
+  const s=document.createElement('script');s.src='/dwg-browser-import.js?v=20261127-exact-notches';
   s.onload=()=>window.VSDWGImport?resolve():reject(Error('Modulo DWG caricato senza API'));
   s.onerror=()=>reject(Error('Modulo DWG non disponibile: verifica il deployment'));document.head.append(s);
  });
@@ -222,7 +232,7 @@ async function autoImport(){
 async function exportDxf(){
  try{
   if(!window.VSDWGImport?.toDxf)await new Promise((resolve,reject)=>{
-   const s=document.createElement('script');s.src='/dwg-browser-import.js?v=R13-dxf-arc-20261123';
+   const s=document.createElement('script');s.src='/dwg-browser-import.js?v=20261127-exact-notches';
    s.onload=()=>window.VSDWGImport?resolve():reject(Error('Modulo DWG non disponibile'));
    s.onerror=()=>reject(Error('Modulo DWG non raggiungibile'));document.head.append(s);
   });
@@ -435,5 +445,5 @@ function place(){
  if(typeof pickerContext==='function')pickerContext();
  notify(placements.length===1?'Accessorio applicato':placements.length+' accessori applicati');
 }
-window.VSTech={version:'R13-dxf-arc-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,changePlacement,cancelPlacement,editPlacement,pickPoint,queuePlacement,removePlacement,place,parseDXF};
+window.VSTech={version:'20261127-exact-notches',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,changePlacement,cancelPlacement,editPlacement,pickPoint,queuePlacement,removePlacement,place,parseDXF};
 })();

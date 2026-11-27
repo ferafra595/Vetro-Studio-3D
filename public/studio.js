@@ -376,17 +376,18 @@ function makeSurfaceTexture(Three,finish){
  const texture=new Three.CanvasTexture(canvas);texture.colorSpace=Three.SRGBColorSpace||undefined;texture.encoding=Three.sRGBEncoding;texture.wrapS=texture.wrapT=Three.RepeatWrapping;texture.anisotropy=4;
  materialCache.set(key,texture);return texture;
 }
+const cutCoordinate=n=>Math.round(n*10000)/10000;
 function technicalHoles(o,excludedId=null,pending=[]){
  const result=(o.holes||[]).map(h=>({...h}));
  if(o.kind!=='glass'&&o.kind!=='mirror')return result;
  for(const a of [...model().objects,...pending]){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||(excludedId instanceof Set?excludedId.has(a.id):a.id===excludedId))continue;
-  for(const h of a.technicalSpec.holes||[])result.push({type:'circle',x:mm(a.localX+N(h.x)),y:mm(a.localY+N(h.y)),r:N(h.r),technicalInstanceId:a.id});
+  for(const h of a.technicalSpec.holes||[])result.push({type:'circle',x:cutCoordinate(a.localX+N(h.x)),y:cutCoordinate(a.localY+N(h.y)),r:N(h.r),technicalInstanceId:a.id});
  }
  return result;
 }
 function technicalCutouts(o,excludedId=null,pending=[]){const result=[];
  for(const a of [...model().objects,...pending]){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||(excludedId instanceof Set?excludedId.has(a.id):a.id===excludedId))continue;
-  for(const poly of a.technicalSpec.cutouts||[])result.push(poly.map(p=>[mm(a.localX+N(p[0])),mm(a.localY+N(p[1]))]));
+  for(const poly of a.technicalSpec.cutouts||[])result.push(poly.map(p=>[cutCoordinate(a.localX+N(p[0])),cutCoordinate(a.localY+N(p[1]))]));
  }return result;
 }
 function panelVector(owner,x,y,z,inverse=false){
@@ -436,12 +437,26 @@ function technicalGlassShape(o,additional=[],excludedId=null,pending=[]){
  if(!window.VSGlassCut?.difference)throw Error('Motore di sottrazione dei tagli non caricato');
  return window.VSGlassCut.difference(outer,all);
 }
+function technicalContourProfile(panel,outline){
+ const arcs=[];
+ for(const part of model().objects){
+  if(part.attachTo!==panel.id)continue;
+  for(const path of part.technicalSpec?.exactPaths||[]){
+   if(!Array.isArray(path?.points)||!Array.isArray(path.bulges)||path.points.length!==path.bulges.length)continue;
+   const points=path.points.map(p=>[cutCoordinate(part.localX+N(p?.[0])),cutCoordinate(part.localY+N(p?.[1]))]);
+   for(const [i,bulge] of path.bulges.entries()){
+    if(Number.isFinite(bulge)&&Math.abs(bulge)>1e-9)arcs.push({a:points[i],b:points[(i+1)%points.length],bulge});
+   }
+  }
+ }
+ return window.VSGeometry.restoreContourArcs(outline,arcs);
+}
 function technicalPatternValid(owner,spec,x,y,excludedId=null,pending=[]){
  if(!owner)return 'Lastra di riferimento non disponibile';
  if(!Number.isFinite(x)||!Number.isFinite(y))return 'Coordinate non valide';
  if(!spec.holes?.length&&!spec.cutouts?.length&&(x<0||x>owner.w||y<0||y>owner.h))return 'Il punto di fissaggio deve essere entro l’ingombro della lastra';
- const added=(spec.cutouts||[]).map(poly=>poly.map(p=>[mm(x+N(p[0])),mm(y+N(p[1]))]));
- const existing=technicalHoles(owner,excludedId,pending),newHoles=(spec.holes||[]).map(h=>({x:mm(x+N(h.x)),y:mm(y+N(h.y)),r:N(h.r)}));
+ const added=(spec.cutouts||[]).map(poly=>poly.map(p=>[cutCoordinate(x+N(p[0])),cutCoordinate(y+N(p[1]))]));
+ const existing=technicalHoles(owner,excludedId,pending),newHoles=(spec.holes||[]).map(h=>({x:cutCoordinate(x+N(h.x)),y:cutCoordinate(y+N(h.y)),r:N(h.r)}));
  for(const h of newHoles)if(!(h.r>0)||!insidePanel(owner,h.x,h.y,h.r))return 'Una foratura esce dal vetro: sposta l’accessorio';
  let result;
  try{
@@ -480,7 +495,8 @@ function orientTechnicalItem(item,edge){
  const spec=item.cut_spec;
  return {...item,mountEdge:edge,cut_spec:{...spec,
   holes:(spec.holes||[]).map(h=>{const [x,y]=transform([N(h.x),N(h.y)]);return {...h,x,y};}),
-  cutouts:(spec.cutouts||[]).map(poly=>poly.map(point=>transform(point.map(Number))))
+  cutouts:(spec.cutouts||[]).map(poly=>poly.map(point=>transform(point.map(Number)))),
+  exactPaths:spec.exactPaths?.map(path=>({points:path.points.map(point=>transform(point.map(Number))),bulges:path.bulges.map(b=>edge==='right'?-b:b)}))
  }};
 }
 function orientHardware(T,edge,model){
@@ -1353,7 +1369,7 @@ window.VSTechBridge={mounted(ownerId){
 },selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},orient:orientTechnicalItem,validateBatch:placements=>{const {ok,error}=prepareTechnicalBatch(placements);return {ok,error}},placeBatch:placeTechnicalBatch,place:placeTechnicalAccessory};
 window.VSCADBridge={
  panels:()=>glassPanels().map(({id,name})=>({id,name})),
- selected(excluded=null){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o,[],excluded);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o,excluded),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch}},
+ selected(excluded=null){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o,[],excluded);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o,excluded),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch,technicalProfile:shape.edgeNotch?technicalContourProfile(o,shape.outline):null}},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
  if(model().objects.some(a=>a.attachTo===o.id&&a.technicalSpec))return {ok:false,error:'Per modificare il profilo base rimuovi prima gli accessori tecnici; gli scassi sono calcolati automaticamente.'};
  const manualHoles=(holes||[]).filter(h=>!h.technicalInstanceId);const r=window.VSGeometry.normalize(outline,manualHoles);if(!r.ok)return r;
@@ -1370,8 +1386,17 @@ exportDXF=function(panelId){
  const panels=model().objects.filter(o=>['glass','mirror'].includes(o.kind));
  if(!panels.length)return toast('Nessuna lastra da esportare');
  if(panelId!==undefined&&!panels.some(o=>o.id===panelId))return toast('Seleziona una lastra da esportare');
- const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES'];
+ const rows=['0','SECTION','2','HEADER','9','$ACADVER','1','AC1015','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES'];
  const line=(a,b,layer)=>rows.push('0','LINE','8',layer,'10',String(a[0]),'20',String(a[1]),'30','0','11',String(b[0]),'21',String(b[1]),'31','0');
+ const contour=(profile,layer)=>{
+  const {points,bulges}=profile;
+  if(!bulges?.some(b=>Math.abs(b)>1e-9)){
+   for(const [j,point] of points.entries())line(point,points[(j+1)%points.length],layer);
+   return;
+  }
+  rows.push('0','LWPOLYLINE','100','AcDbEntity','8',layer,'100','AcDbPolyline','90',String(points.length),'70','1');
+  for(const [j,[x,y]] of points.entries())rows.push('10',String(x),'20',String(y),'42',String(bulges[j]||0));
+ };
  for(const [i,o] of panels.entries()){
   if(panelId!==undefined&&o.id!==panelId)continue;
   if(o.curve)return toast('DXF piano non disponibile per la lastra curva '+o.name);
@@ -1379,12 +1404,9 @@ exportDXF=function(panelId){
   try{derived=technicalGlassShape(o)}catch(error){return toast('Esportazione DXF bloccata per '+o.name+': '+error.message)}
   const layer='LASTRA_'+(i+1),pts=derived.outline;
   if(!window.VSGeometry.validate(pts,technicalHoles(o)).ok){toast('Esportazione DXF bloccata: geometria non valida '+o.name);return}
-  if(!technicalCutouts(o).length&&o.cadProfile?.points?.length>=3&&o.cadProfile.bulges?.some(b=>Math.abs(b||0)>1e-9)){
-   const profile=o.cadProfile;
-   rows.push('0','LWPOLYLINE','8',layer,'90',String(profile.points.length),'70','1');
-   for(let j=0;j<profile.points.length;j++)rows.push('10',String(profile.points[j][0]),'20',String(profile.points[j][1]),'42',String(profile.bulges[j]||0));
-  }else for(let j=0;j<pts.length;j++)line(pts[j],pts[(j+1)%pts.length],layer);
-  for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of derived.voids)for(let i=0;i<polygon.length;i++)line(polygon[i],polygon[(i+1)%polygon.length],layer+'_TAGLI')
+  const profile=!technicalCutouts(o).length&&o.cadProfile?.points?.length>=3?o.cadProfile:technicalContourProfile(o,pts);
+  contour(profile,layer);
+  for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of derived.voids)contour(technicalContourProfile(o,polygon),layer+'_TAGLI')
  }
  rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+(panelId===undefined?'':'-lastra-'+(panels.findIndex(o=>o.id===panelId)+1))+'.dxf',rows.join('\n'),'application/dxf')};
 function exportWorkshopSheet(){

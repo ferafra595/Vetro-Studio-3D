@@ -366,7 +366,14 @@ function autoOpenEdgeNotch(database) {
   const upper=arcOriented(m.high,m.highInner,m.highShelf);
   outline=cleanedPolygon([m.edgeBottom,m.lowShelf,...lower.slice(1),m.highInner,...upper.slice(1),m.edgeTop]);
  }catch(err){return {status:'blocked',reason:'Contorno non valido: '+err.message}}
- const xs=outline.map(p=>p[0]),ys=outline.map(p=>p[1]);
+ const extrema=[...outline];
+ for(const arc of [m.low,m.high]){
+  for(const angle of [0,Math.PI/2,Math.PI,3*Math.PI/2]){
+   const delta=((angle-arc.st)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+   if(delta<=arc.delta)extrema.push([arc.c[0]+arc.r*Math.cos(angle),arc.c[1]+arc.r*Math.sin(angle)]);
+  }
+ }
+ const xs=extrema.map(p=>p[0]),ys=extrema.map(p=>p[1]);
  const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
  const originX=(minX+maxX)/2,originY=(minY+maxY)/2;
  // Retain the exact CAD circular arcs as DXF polyline bulges. 3D preview
@@ -378,15 +385,15 @@ function autoOpenEdgeNotch(database) {
  const exactVertices=[m.edgeBottom,m.lowShelf,m.lowInner,m.highInner,m.highShelf,m.edgeTop];
  const exactBulges=[0,signedBulge(m.low,m.lowShelf),0,signedBulge(m.high,m.highInner),0,0];
  const exactPaths=[{points:exactVertices.map(p=>[round(p[0]-originX),round(p[1]-originY)]),bulges:exactBulges}];
- const cuts={holes:[],cutouts:[outline.map(p=>[round(p[0]-originX),round(p[1]-originY)])],
-  exactPaths,origin:[round(originX),round(originY)],edgeNotch:true,preferredEdge:'left'};
- return {status:'matched',format:'DWG',cuts,
-  dimensions:{diameter:round(m.low.r*2),centerSpacing:round(m.spacing),
-   notchDepth:round(m.vertical.a[0]-m.borderX),
+ const dimensions={diameter:round(m.low.r*2),centerSpacing:round(m.spacing),
+   notchDepth:round(m.vertical.a[0]-m.borderX),centerDepth:round(m.low.c[0]-m.borderX),
    opening:round(m.edgeTop[1]-m.edgeBottom[1]),
-   overallWidth:round(maxX-m.borderX),overallHeight:round(maxY-minY)},
+   overallWidth:round(maxX-m.borderX),overallHeight:round(maxY-minY)};
+ const cuts={holes:[],cutouts:[outline.map(p=>[round(p[0]-originX),round(p[1]-originY)])],
+  exactPaths,origin:[round(originX),round(originY)],edgeNotch:true,preferredEdge:'left',sourceDimensions:dimensions};
+ return {status:'matched',format:'DWG',cuts,dimensions,
   layer:m.low.layer,sourceIds:m.ids,
-  warning:'Scasso sul bordo ricostruito direttamente da cinque entità LINE/ARC contigue e dai prolungamenti del vetro. Il DXF della lavorazione preserva gli ARC originali tramite bulge, mentre l’anteprima 2D/3D è campionata (errore ≤0,025 mm): verificare tutte le quote e il riferimento sul disegno originale. Non è un programma CNC.'};
+  warning:'Scasso sul bordo ricostruito direttamente da cinque entità LINE/ARC contigue e dai prolungamenti del vetro. Il DXF della lavorazione preserva gli ARC originali tramite bulge, mentre l’anteprima CAD 2D è campionata (errore ≤0,025 mm): verificare tutte le quote e il riferimento sul disegno originale. Non è un programma CNC.'};
 }
 function autoHingeNotch(database,clipper){
  const open=autoOpenEdgeNotch(database);

@@ -125,5 +125,37 @@ function bulgeFromRadius(a,b,radius,side=1){
  const theta=2*Math.asin(chord/(2*radius));return Math.tan(theta/4)*(side>=0?1:-1);
 }
 
-return Object.freeze({arcGeometry,sampleArc,tessellateProfile,bulgeFromRadius,signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline,projection,snapCandidates,segmentIntersectionPoint,alignEdge,chamfer});
+function restoreContourArcs(outline,arcs){
+ const n=outline.length;
+ if(n<3||!arcs.length)return {points:outline,bulges:[]};
+ const replacements=new Map(),interior=new Set(),tolerance=.015;
+ const tau=Math.PI*2;
+ const angleFrom=(arc,point)=>((Math.atan2(point[1]-arc.center[1],point[0]-arc.center[0])-arc.start)*Math.sign(arc.angle)+tau)%tau;
+ for(const {a,b,bulge} of arcs){
+  for(const [start,end,curve] of [[a,b,bulge],[b,a,-bulge]]){
+   const i=outline.findIndex(point=>dist(point,start)<=tolerance);
+   const j=outline.findIndex(point=>dist(point,end)<=tolerance);
+   const length=(j-i+n)%n;
+   if(i<0||j<0||length<2||replacements.has(i)||interior.has(i)||interior.has(j))continue;
+   let arc;
+   try{arc=arcGeometry(start,end,curve);}catch{continue;}
+   if(!arc)continue;
+   const indices=Array.from({length:length-1},(_,step)=>(i+step+1)%n);
+   let previous=0;
+   const connected=indices.every(index=>{
+    if(interior.has(index)||replacements.has(index))return false;
+    const point=outline[index],angle=angleFrom(arc,point);
+    if(Math.abs(dist(point,arc.center)-arc.radius)>tolerance||angle<=previous||angle>=Math.abs(arc.angle))return false;
+    previous=angle;
+    return true;
+   });
+   if(!connected)continue;
+   replacements.set(i,curve);
+   indices.forEach(index=>interior.add(index));
+   break;
+  }
+ }
+ return {points:outline.filter((_,i)=>!interior.has(i)),bulges:outline.flatMap((_,i)=>interior.has(i)?[]:[replacements.get(i)||0])};
+}
+return Object.freeze({restoreContourArcs,arcGeometry,sampleArc,tessellateProfile,bulgeFromRadius,signedArea,segmentsIntersect,pointInside,distanceToSegment,validate,normalize,snapPoint,slotOutline,projection,snapCandidates,segmentIntersectionPoint,alignEdge,chamfer});
 });
