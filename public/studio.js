@@ -210,10 +210,10 @@ function buildInteriorDoor(add,kind,fix){
 function buildFasciaBalustrade(add){
  const width=2460,depth=960,edge=depth/2,deck=270,glassThickness=12,paneDepth=edge+31,paneHeight=1330;
  add('floor','Soletta',0,114,-14,width,228,depth-28,{finish:'concrete'});
- add('floor','Rivestimento frontale',0,118,edge-14,width,236,28,{finish:'limestone'});
- add('floor','Copertina perimetrale',0,247,0,width+20,30,depth+24,{finish:'limestone'});
+ add('floor','Rivestimento frontale',0,118,edge-14,width,236,28,{finish:'limestone',beveled:true});
+ add('floor','Copertina perimetrale',0,247,0,width+20,30,depth+24,{finish:'limestone',beveled:true});
  const board=114;
- for(let i=0;i<8;i++)add('floor','Listone '+(i+1),0,deck-4,-depth/2+20+board*(i+.5),width-95,16,board-4,{finish:'deckWood'});
+ for(let i=0;i<8;i++)add('floor','Listone '+(i+1),0,deck-4,-depth/2+20+board*(i+.5),width-95,16,board-4,{finish:'deckWood',beveled:true});
  for(const direction of [-1,1]){
   const x=direction*width/4;
   const pane=add('glass',direction<0?'Vetro sinistro':'Vetro destro',x,30+paneHeight/2,paneDepth,width/2-12,paneHeight,glassThickness,{finish:'clear'});
@@ -725,6 +725,35 @@ function profileMesh(Three,o){
  for(const material of unused)material.dispose();
  return group;
 }
+function beveledFinishGeometry(Three,o){
+ const w=N(o.w),h=N(o.h),d=N(o.d);
+ const bevel=Math.min(2.5,h/5,d/5);
+ const x=w/2-bevel,y=h/2-bevel,depth=d-2*bevel;
+ const shape=new Three.Shape();
+ shape.moveTo(-x,-y);shape.lineTo(x,-y);shape.lineTo(x,y);shape.lineTo(-x,y);shape.closePath();
+ const geometry=new Three.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelSize:bevel,bevelThickness:bevel,bevelSegments:3});
+ geometry.translate(0,0,-depth/2);
+ // Reuse the box surface materials by assigning UVs and faces from their normals.
+ geometry.clearGroups();
+ const position=geometry.attributes.position,normal=geometry.attributes.normal,uv=geometry.attributes.uv;
+ let previous=-1,start=0;
+ for(let i=0;i<position.count;i+=3){
+  const axes=[normal.getX(i),normal.getY(i),normal.getZ(i)];
+  const axis=axes.reduce((best,value,index)=>Math.abs(value)>Math.abs(axes[best])?index:best,0);
+  const material=axis*2+(axes[axis]<0?1:0);
+  if(material!==previous){
+   if(previous>=0)geometry.addGroup(start,i-start,previous);
+   previous=material;start=i;
+  }
+  for(let j=i;j<i+3;j++){
+   const u=axis===0?position.getZ(j)/d:position.getX(j)/w;
+   const v=axis===1?position.getZ(j)/d:position.getY(j)/h;
+   uv.setXY(j,u+.5,v+.5);
+  }
+ }
+ geometry.addGroup(start,position.count-start,previous);
+ return geometry;
+}
 function createMesh(o){
  const Three=T();
  if(o.kind==='profile')return profileMesh(Three,o);
@@ -739,6 +768,7 @@ function createMesh(o){
   geo=new Three.ExtrudeGeometry(profile,{depth:Math.max(1,o.d),bevelEnabled:false});
   geo.translate(0,0,-o.d/2);
  }
+ else if(o.beveled)geo=beveledFinishGeometry(Three,o);
  else geo=new Three.BoxGeometry(Math.max(1,o.w),Math.max(1,o.h),Math.max(1,o.d));
  let material;
  if(glass){
@@ -757,7 +787,15 @@ function createMesh(o){
    material.onBeforeCompile=shader=>{
     shader.fragmentShader=shader.fragmentShader.replace(
      'gl_FragColor = vec4( outgoingLight, diffuseColor.a );',
-     'float reflection = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 4.0); gl_FragColor = vec4( outgoingLight, min(0.55, diffuseColor.a + reflection * 0.42) );'
+     `vec3 towardViewer = normalize(vViewPosition);
+     float angle = abs(dot(normal, towardViewer));
+     float fresnel = 0.04 + 0.96 * pow(1.0 - angle, 5.0);
+     vec3 reflected = inverseTransformDirection(reflect(-towardViewer, normal), viewMatrix);
+     float key = pow(max(dot(reflected, normalize(vec3(-3.0, 4.0, 3.0))), 0.0), 10.0);
+     float rim = pow(max(dot(reflected, normalize(vec3(4.0, 2.0, -3.0))), 0.0), 22.0);
+     float studioLight = 0.25 * key + 0.32 * rim;
+     vec3 reflectedLight = vec3(0.84, 0.92, 0.96) * studioLight;
+     gl_FragColor = vec4( outgoingLight * 0.54 + reflectedLight, clamp(diffuseColor.a * 0.60 + fresnel * 0.56 + studioLight * 0.34, 0.075, 0.68) );`
     );
    };
   }
@@ -801,7 +839,13 @@ function createMesh(o){
      };
      if(type==='borchia'){
       const radius=diameter/2,stem=Math.max(8,N(o.standOff,N(o.d,28)*.5));
-      ring(radius*.78,radius*.78,stem,-stem/2-1);
+      if(o.standOff){
+       const sleeve=ring(radius*.63,radius*.69,stem,-stem/2-1);
+       sleeve.name='Distanziale tornito';
+       const washer=ring(radius*.86,radius*.86,2,-stem+1);
+       washer.name='Rosetta lato soletta';
+       ring(radius*.76,radius*.76,1.8,-2.2,gasket);
+      }else ring(radius*.78,radius*.78,stem,-stem/2-1);
       ring(radius*.91,radius*.91,1.6,0,gasket);
       ring(radius,radius*.94,4.6,3.1);
       ring(radius*.23,radius*.23,1,5.7);
