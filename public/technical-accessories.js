@@ -280,7 +280,7 @@ function renderPicker(items){
  <p class="small">Clicca sulla lastra per impostare la posizione oppure inserisci le quote.</p>
  <svg id="pickDrawing" width="100%" height="190" role="img" aria-label="Anteprima 2D della lastra e delle lavorazioni" onclick="VSTech.pickPoint(event)"></svg>
  <p id="pickNotchHint" class="small" role="status" aria-live="polite"></p>
- <div id="pickQueue"></div><div id="pickMounted"></div>
+ <div id="pickQueue"></div><div id="pickMounted"></div><div id="pickDistribution"></div>
  <div class="actions techPlacementActions"><button id="pickCancel" class="btn" hidden onclick="VSTech.cancelPlacement()">Annulla posizione</button><button id="pickAdd" class="btn" disabled onclick="VSTech.queuePlacement()">Aggiungi alla lista</button>
  <button id="pickApply" class="btn primary" disabled onclick="VSTech.place()">Applica accessori</button></div></div>`;
 }
@@ -321,6 +321,47 @@ async function updatePicker(){
   $('pickEdge').value=pickerItem.cut_spec.edgeNotch?'auto':'free';
   previewPlacement();
  }catch(e){if($('pickTech')===select&&select.value===id)$('pickNotchHint').textContent=e.message}
+}
+function distributionGroups(placements){
+ const groups=[];
+ const entries=[...mounted.filter(entry=>!placements.some(p=>p.existingId===entry.existingId)),...placements];
+ for(const entry of entries){
+  if(['top','bottom'].includes(entry.item.mountEdge))continue;
+  let group=groups.find(([first])=>first.item.id===entry.item.id&&first.item.mountEdge===entry.item.mountEdge&&Math.abs(first.x-entry.x)<.01);
+  if(!group){group=[];groups.push(group);}
+  group.push(entry);
+ }
+ return groups.filter(group=>group.length>=2).map(group=>group.sort((a,b)=>a.y-b.y));
+}
+function renderDistribution(placements){
+ const groups=distributionGroups(placements);
+ $('pickDistribution').innerHTML=groups.map((group,index)=>{
+  const distances=group.slice(1).map((entry,i)=>entry.y-group[i].y);
+  const summary=distances.map(value=>value.toLocaleString('it-IT',{maximumFractionDigits:2})).join(' · ');
+  return `<div class="item"><strong>${E(group[0].item.name)} · ${group.length} posizioni</strong>
+   <p class="small">Interassi dal basso: ${summary} mm</p>
+   ${group.length>=3?`<button class="btn" onclick="VSTech.distributeEqually(${index})">Distribuisci a intervalli uguali</button>`:''}</div>`;
+ }).join('');
+}
+function distributeEqually(index){
+ const preview=previewPlacement();
+ if(!preview)return;
+ if(draftActive&&(!preview.candidate||!preview.ok))return notify('Correggi o annulla la posizione corrente prima di distribuire le cerniere.');
+ const group=distributionGroups(preview.placements)[index];
+ if(!group||group.length<3)return;
+ const first=group[0].y,last=group.at(-1).y,gap=(last-first)/(group.length-1);
+ if(!(gap>0))return notify('Scegli due quote estreme diverse.');
+ const next=preview.placements.filter(entry=>!group.includes(entry));
+ for(const [i,entry] of group.entries()){
+  next.push({...entry,y:Number((first+i*gap).toFixed(4)),
+   anchor:{edge:'uniform',bottom:first,top:preview.owner.h-last,fraction:i/(group.length-1)}});
+ }
+ const result=window.VSTechBridge.validateBatch(next);
+ if(!result.ok)return notify(result.error);
+ pickerQueue=next;
+ draftActive=false;editingIndex=null;
+ previewPlacement();
+ $('pickNotchHint').textContent=`Interasse uniforme: ${gap.toLocaleString('it-IT',{maximumFractionDigits:3})} mm. Applica per confermare.`;
 }
 function previewPlacement(){
  const owner=window.VSCADBridge.selected(),svg=$('pickDrawing');
@@ -392,6 +433,7 @@ function previewPlacement(){
  $('pickQueue').innerHTML=pickerQueue.length?`<h4>In lista</h4><ol>${pickerQueue.map((entry,index)=>`<li>${entryLabel(entry)} <button class="btn" onclick="VSTech.editPlacement(${index})">Sposta</button> <button class="btn" onclick="VSTech.removePlacement(${index})">Rimuovi</button></li>`).join('')}</ol>`:'';
  const installed=mounted.map((entry,index)=>placements.some(p=>p.existingId===entry.existingId)?'':`<li>${entryLabel(entry)} <button class="btn" onclick="VSTech.editPlacement(${index},true)">Sposta</button></li>`).join('');
  $('pickMounted').innerHTML=installed?`<h4>Già montati</h4><ul>${installed}</ul>`:'';
+ renderDistribution(placements);
  const edgeLabels={left:'sinistro',right:'destro',bottom:'inferiore',top:'superiore'};
  status.textContent=result?.error||(draftActive&&!candidate?'Inserisci entrambe le quote.':candidate?(edgeLabels[edge]?'Aggancio valido · bordo '+edgeLabels[edge]:'Posizione valida.'):'Clicca sulla lastra o scegli Sposta.');
  return {candidate,placements,ok:result?.ok,item,x,y,owner,vertical,fromTop};
@@ -494,5 +536,5 @@ function place(){
  if(typeof pickerContext==='function')pickerContext();
  notify(placements.length===1?'Accessorio applicato':placements.length+' accessori applicati');
 }
-window.VSTech={version:'20261127-exact-notches',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,changePlacement,cancelPlacement,editPlacement,pickPoint,updateSeries,queueSeries,queuePlacement,removePlacement,place,parseDXF};
+window.VSTech={version:'20261127-exact-notches',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,changePlacement,cancelPlacement,editPlacement,pickPoint,updateSeries,queueSeries,distributeEqually,queuePlacement,removePlacement,place,parseDXF};
 })();
