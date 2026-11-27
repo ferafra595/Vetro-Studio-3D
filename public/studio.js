@@ -95,10 +95,10 @@ function queueAutosave(){clearTimeout(U.timer);if(!S.current?.id)return;U.timer=
 function renderSidebar(){let el=$id('vsSide');if(!el)return;el.innerHTML={models:()=>`<h3>Scegli categoria e modello</h3><label class="label">Categoria</label><select id="vsCategory" onchange="VS.setCategory(this.value)">${Object.entries(labels).map(([v,l])=>`<option value="${v}" ${U.cat===v?'selected':''}>${l}</option>`).join('')}</select><div class="vsModels">${(catalog[U.cat]||[]).map(t=>`<button class="vsModel" onclick="VS.choose('${U.cat}','${t[0]}')"><strong>${t[0]}</strong><span>${t[1]}</span></button>`).join('')}</div><button class="btn" onclick="VS.blank()">+ Progetto libero</button>`,draw:()=>`<h3>Disegna e aggiungi</h3><div class="vsModels">${[['glass','Lastra'],['wall','Muro'],['floor','Pavimento'],['stair','Gradino'],['balcony','Balcone'],['profile','Profilo'],['mirror','Specchio']].map(([k,l])=>`<button class="vsModel" onclick="VS.add('${k}')">+ ${l}</button>`).join('')}</div><button class="btn" onclick="VS.shapeEditor()">Editor sagoma 2D</button>`,objects:()=>`<h3>Oggetti del progetto</h3><div class="vsTree">${model().objects.map(o=>`<button class="vsTreeRow ${U.selected===o.id?'active':''}" onclick="VS.select('${o.id}')">${esc(o.name)}<small>${o.kind}</small></button>`).join('')||'<p class="small">Nessun elemento</p>'}</div>`,accessories:()=>`<h3>Accessori</h3><p class="small">Seleziona una lastra prima di posizionare un accessorio.</p><button class="btn primary" style="width:100%;margin-bottom:10px" onclick="VSTech.picker()">+ Inserisci dalla libreria tecnica</button>${[['maniglia','Maniglia'],['cerniera','Cerniera'],['borchia','Borchia'],['morsetto','Morsetto'],['barra','Tirante']].map(([k,l])=>`<button class="vsModel" onclick="VS.accessory('${k}')">+ ${l}</button>`).join('')}`,materials:()=>`<h3>Materiali e finiture</h3><p class="small">Seleziona un muro, pavimento, balcone o gradino. Tre finiture moderne, ognuna modificabile.</p><div class="vsModels">${[['concrete','01 · Cemento architettonico'],['stone','02 · Pietra naturale'],['wood','03 · Rovere contemporaneo']].map(([k,l])=>`<button class="vsModel" onclick="VS.finish('${k}')">${l}</button>`).join('')}</div><button class="btn" onclick="VS.applyModernScene()">Applica design moderno all’ambiente</button>`} [U.tab]?.()||'';if(U.tab==='models'&&model().studio.category==='scala'){const params=document.createElement('div');params.id='vsParams';params.className='vsParamPanel';el.append(params);updateParamPanel()}}
 function renderProps(){let el=$id('vsProps');if(!el)return;let o=model().objects.find(o=>o.id===U.selected);if(!o){el.innerHTML='<p class="small">Clicca un oggetto nel 3D per modificarlo.</p>';return}const keys=[['x','X'],['y','Y'],['z','Z'],['w','Larghezza'],['h','Altezza'],['d','Spessore / profondità'],['rx','Rotazione X'],['ry','Rotazione Y'],['rz','Rotazione Z']];el.innerHTML=`<strong>${esc(o.name)}</strong><small class="muted"> · ${esc(o.kind)}</small><label class="label">Nome</label><input class="field" value="${esc(o.name)}" onchange="VS.edit('${o.id}','name',this.value)"><div class="vsFieldGrid">${keys.map(([k,l])=>`<label>${l}<input class="field" type="number" step="0.1" value="${N(o[k])}" onchange="VS.edit('${o.id}','${k}',this.value)"></label>`).join('')}</div>${['wall','floor','stair','balcony'].includes(o.kind)?`<label class="label">Finitura architettonica</label><select class="field" onchange="VS.finish(this.value)">${[['concrete','Cemento moderno'],['stone','Pietra naturale'],['wood','Rovere contemporaneo']].map(([v,l])=>`<option value="${v}" ${o.finish===v?'selected':''}>${l}</option>`).join('')}</select>`:''}<div class="actions"><button class="btn" onclick="VS.duplicate()">Duplica</button><button class="btn danger" onclick="VS.remove()">Elimina</button>${['glass','mirror'].includes(o.kind)?'<button class="btn" onclick="VS.shapeEditor()">Sagoma 2D</button>':''}</div>`}
 function updateTitle(){let el=$id('vsTitle');if(el)el.textContent=S.current?.title||'Nuovo progetto'}
-function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),acc=m.objects.filter(o=>o.kind==='accessory').length,material=area*180,accessories=acc*35,cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
+function pricingModel(){let m=model(),glass=m.objects.filter(o=>o.kind==='glass'||o.kind==='mirror'),area=glass.reduce((s,o)=>{if(o.shape?.length>=3){let pts=o.shape,total=0;for(let i=0;i<pts.length;i++){let a=pts[i],b=pts[(i+1)%pts.length];total+=a[0]*b[1]-b[0]*a[1]}return s+Math.max(0,Math.abs(total)/2-(o.holes||[]).reduce((a,h)=>a+Math.PI*h.r*h.r,0))/1e6}return s+o.w*o.h/1e6},0),material=area*180,accessories=m.objects.filter(o=>o.kind==='accessory').reduce((sum,o)=>sum+N(o.technicalUnitPrice,35),0),cost=material+accessories+N(m.labour)+N(m.installation)+N(m.transport),net=cost*(1+N(m.margin)/100)*(1-N(m.discount)/100),tax=net*N(m.vat,22)/100;return {area,material,accessories,cost,net,tax,total:net+tax}}
 function updatePricing(){let el=$id('vsQuote');if(!el)return;let p=pricingModel();el.innerHTML=`<div class="vsMetric">Vetro <b>${p.area.toFixed(2)} m²</b></div><div class="vsMetric">Materiali <b>${eur(p.material)}</b></div><div class="vsMetric">Accessori <b>${eur(p.accessories)}</b></div><div class="vsMetric">Imponibile <b>${eur(p.net)}</b></div><div class="vsMetric">Totale IVA inclusa <strong>${eur(p.total)}</strong></div><p class="small">Prezzi indicativi: da configurare nei listini della vetreria.</p>`}
 function initProject(){if(!S.current)S.current={id:null,title:'Nuovo progetto',client_id:'',status:'bozza',model:newModel(),revision:0};let m=model();if(!m.objects.length&&!m.studio.initialized){let built=build('doccia',catalog.doccia[0]);m.objects=built.objects;m.studio=built.studio;m.studio.initialized=true}U.cat=m.studio.category in catalog?m.studio.category:'doccia';U.undo=[];U.redo=[];U.selected=null}
-function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn primary" onclick="VS.tab('models')">Scegli categoria e modello</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['accessories','⚙','Accessori'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.shapeEditor()" title="Modifica la lastra selezionata in 2D">CAD 2D</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">€ Preventivo</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic + trascina: sposta oggetto · Alt + trascina: ruota vista · Maiusc + trascina: piano XZ · Rotella: zoom</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Preventivo</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}</details><hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></aside></div></div>`}
+function designerHTML(){initProject();return `<div class="vsWorkspace"><header class="vsHeader"><div class="vsLogo">Vetro<span>Studio</span> 3D <small id="vsTitle">${esc(S.current.title)}</small></div><div class="vsHeadActions"><button class="btn" onclick="navigate('home')">← Gestionale</button><button class="btn" onclick="navigate('projects')">Apri progetto</button><button class="btn primary" onclick="VS.tab('models')">Scegli categoria e modello</button><button class="btn" onclick="VS.undo()" title="Annulla">↶</button><button class="btn" onclick="VS.redo()" title="Ripristina">↷</button><button class="btn primary" onclick="saveCurrent()">Salva</button><select class="vsExport" onchange="VS.export(this.value);this.value='' "><option value="">Esporta...</option><option value="pdf">PDF</option><option value="png">PNG</option><option value="dxf">DXF commessa</option><option value="dxf-panel">DXF lastra selezionata</option><option value="workshop">Scheda lavorazioni</option><option value="csv">CSV</option><option value="gltf">GLTF</option></select></div></header><div class="vsContent"><nav class="vsRail">${[['models','▦','Modelli'],['draw','✎','Disegna'],['objects','▤','Elementi'],['accessories','⚙','Accessori'],['materials','◈','Materiali']].map(([id,g,n])=>`<button onclick="VS.tab('${id}')" title="${n}" data-vstab="${id}"><b>${g}</b>${n}</button>`).join('')}</nav><aside class="vsLeft" id="vsLeft"><button class="vsCollapse" onclick="VS.toggleLeft()">‹</button><div id="vsSide"></div></aside><main class="vsViewport"><canvas id="canvas3d"></canvas><div class="vsCam"><button onclick="VS.camera('iso')">3D</button><button onclick="VS.shapeEditor()" title="Modifica la lastra selezionata in 2D">CAD 2D</button><button onclick="VS.camera('front')">Frontale</button><button onclick="VS.camera('side')">Laterale</button><button onclick="VS.camera('top')">Dall'alto</button></div><div class="vsViewTools"><button onclick="VS.frame()">⌗ Inquadra</button><button onclick="VS.toggleRight()">☷ Proprietà</button></div><div class="vsBottom"><button onclick="VS.viewMode()" id="vsVisualBtn">✦ Realistico</button><button onclick="VS.toggleQuote()">€ Preventivo</button><button onclick="VS.toggleSnap()" id="vsSnapBtn">🧲 Snap: ON</button><button onclick="VS.toggleLeft()">☰ Strumenti</button></div><div class="vsHelp">Clic + trascina: sposta oggetto · Alt + trascina: ruota vista · Maiusc + trascina: piano XZ · Rotella: zoom</div></main><aside class="vsRight" id="vsRight"><div class="vsRightHead"><strong>Proprietà</strong><button class="btn" onclick="VS.toggleRight()">×</button></div><div id="vsProps"></div><details id="vsQuoteDetails"><summary>Preventivo</summary><div id="vsQuote"></div>${[['labour','Lavorazioni €'],['installation','Posa €'],['transport','Trasporto €'],['margin','Ricarico %'],['discount','Sconto %'],['vat','IVA %']].map(([k,l])=>`<label class="label">${l}</label><input class="field" type="number" value="${N(model()[k])}" onchange="VS.cost('${k}',this.value)">`).join('')}</details><hr><label class="label">Titolo progetto</label><input class="field" value="${esc(S.current.title)}" oninput="S.current.title=this.value;VS.title()"><label class="label">Cliente</label><select onchange="S.current.client_id=this.value"><option value="">Non assegnato</option>${S.clients.map(c=>`<option value="${c.id}" ${c.id===S.current.client_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></aside></div></div>`}
 // Three.js rendering. Single source of truth: model().objects.
 let renderMeshes=new Map(),orbit={az:.62,el:.34,dist:5500,target:null},viewMode='real';
 // Shared, cached procedural PBR textures; texture scale is in real millimetres.
@@ -121,16 +121,16 @@ function makeSurfaceTexture(Three,finish){
  const texture=new Three.CanvasTexture(canvas);texture.colorSpace=Three.SRGBColorSpace||undefined;texture.encoding=Three.sRGBEncoding;texture.wrapS=texture.wrapT=Three.RepeatWrapping;texture.anisotropy=4;
  materialCache.set(key,texture);return texture;
 }
-function technicalHoles(o){
+function technicalHoles(o,excludedId=null){
  const result=(o.holes||[]).map(h=>({...h}));
  if(o.kind!=='glass'&&o.kind!=='mirror')return result;
- for(const a of model().objects){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec)continue;
+ for(const a of model().objects){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||a.id===excludedId)continue;
   for(const h of a.technicalSpec.holes||[])result.push({type:'circle',x:mm(a.localX+N(h.x)),y:mm(a.localY+N(h.y)),r:N(h.r),technicalInstanceId:a.id});
  }
  return result;
 }
-function technicalCutouts(o){const result=[];
- for(const a of model().objects){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec)continue;
+function technicalCutouts(o,excludedId=null){const result=[];
+ for(const a of model().objects){if(a.kind!=='accessory'||a.attachTo!==o.id||!a.technicalSpec||a.id===excludedId)continue;
   for(const poly of a.technicalSpec.cutouts||[])result.push(poly.map(p=>[mm(a.localX+N(p[0])),mm(a.localY+N(p[1]))]));
  }return result;
 }
@@ -149,22 +149,31 @@ function insidePanel(owner,x,y,r=0){const poly=owner.shape||[[0,0],[owner.w,0],[
  const inside=(px,py)=>{let c=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>py)!==(b[1]>py)&&px<(b[0]-a[0])*(py-a[1])/(b[1]-a[1])+a[0])c=!c}return c};
  return [[x-r,y],[x+r,y],[x,y-r],[x,y+r],[x,y]].every(p=>inside(...p));
 }
-function technicalGlassShape(o,additional=[]){
+function technicalGlassShape(o,additional=[],excludedId=null){
  const outer=o.shape?.length>=3?o.shape:[[0,0],[o.w,0],[o.w,o.h],[0,o.h]];
- const all=[...technicalCutouts(o),...additional];
+ const all=[...technicalCutouts(o,excludedId),...additional];
  if(!all.length)return {outline:outer,voids:[],edgeNotch:false,removedArea:0};
  if(!window.VSGlassCut?.difference)throw Error('Motore di sottrazione dei tagli non caricato');
  return window.VSGlassCut.difference(outer,all);
 }
-function technicalPatternValid(owner,spec,x,y){
+function technicalPatternValid(owner,spec,x,y,excludedId=null){
+ if(!owner)return 'Lastra di riferimento non disponibile';
  if(!Number.isFinite(x)||!Number.isFinite(y))return 'Coordinate non valide';
- const added=(spec.cutouts||[]).map(poly=>poly.map(p=>[x+N(p[0]),y+N(p[1])]));
- const existing=technicalHoles(owner),newHoles=(spec.holes||[]).map(h=>({x:x+N(h.x),y:y+N(h.y),r:N(h.r)}));
+ const added=(spec.cutouts||[]).map(poly=>poly.map(p=>[mm(x+N(p[0])),mm(y+N(p[1]))]));
+ const existing=technicalHoles(owner,excludedId),newHoles=(spec.holes||[]).map(h=>({x:mm(x+N(h.x)),y:mm(y+N(h.y)),r:N(h.r)}));
  for(const h of newHoles)if(!(h.r>0)||!insidePanel(owner,h.x,h.y,h.r))return 'Una foratura esce dal vetro: sposta l’accessorio';
  let result;
- try{result=technicalGlassShape(owner,added)}
+ try{
+  if(spec.edgeNotch){
+   const outer=owner.shape?.length>=3?owner.shape:[[0,0],[owner.w,0],[owner.w,owner.h],[0,owner.h]];
+   if(!added.length||!window.VSGlassCut.difference(outer,added).edgeNotch)return 'Lo scasso deve aprirsi sul bordo della lastra';
+  }
+  result=technicalGlassShape(owner,added,excludedId);
+ }
  catch(err){return 'Taglio non applicabile: '+err.message}
- if(spec.edgeNotch&&!result.edgeNotch)return 'Lo scasso della cerniera deve essere aperto sul bordo della lastra. Posizionalo sul lato previsto.';
+
+ const verified=window.VSGeometry.validate(result.outline,[...existing,...newHoles]);
+ if(!verified.ok)return 'Conflitto fra le lavorazioni: '+verified.error;
  for(const h of [...existing,...newHoles]){
   const check=window.VSGeometry.validate(result.outline,[h]);
   if(!check.ok)return 'Una foratura tocca uno scasso o il bordo: '+check.error;
@@ -173,16 +182,25 @@ function technicalPatternValid(owner,spec,x,y){
  // The boolean engine rejects disconnected pieces. The CAD 2D and 3D render from this same derived outline.
  return null;
 }
-function placeTechnicalAccessory(item,x,y){const owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
+function technicalPlacement(item,x,y){
+ const owner=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));
  if(!owner)return {ok:false,error:'Seleziona prima una lastra'};
  if(item.status!=='approved')return {ok:false,error:'La scheda tecnica non è stata approvata'};
  if(owner.d<N(item.glass_min)||owner.d>N(item.glass_max))return {ok:false,error:'Spessore vetro non compatibile con la scheda accessorio'};
- const spec=structuredClone(item.cut_spec||{holes:[],cutouts:[]});const problem=technicalPatternValid(owner,spec,x,y);if(problem)return {ok:false,error:problem};
- const outline=owner.shape?.length>=3?owner.shape:[[0,0],[owner.w,0],[owner.w,owner.h],[0,owner.h]];
- const candidate=[...technicalHoles(owner),...(spec.holes||[]).map(h=>({x:x+N(h.x),y:y+N(h.y),r:N(h.r)}))];
- const verified=window.VSGeometry.validate(outline,candidate);
- if(!verified.ok)return {ok:false,error:'Conflitto fra le lavorazioni: '+verified.error};
- remember();const o=object('accessory',item.name,0,0,0,50,65,35,{accessoryType:item.category,attachTo:owner.id,technicalId:item.id,technicalCode:item.code,technicalSpec:spec,localX:x,localY:y});
+ const spec=item.cut_spec||{holes:[],cutouts:[]};
+ const error=technicalPatternValid(owner,spec,x,y);
+ return error?{ok:false,error}:{ok:true,owner,spec};
+}
+function placeTechnicalAccessory(item,x,y){
+ const placement=technicalPlacement(item,x,y);
+ if(!placement.ok)return placement;
+ const {owner,spec}=placement;
+ remember();
+ const o=object('accessory',item.name,0,0,0,50,65,35,{
+  accessoryType:item.category,attachTo:owner.id,technicalId:item.id,technicalCode:item.code,
+  technicalSpec:structuredClone(spec),technicalUpdatedAt:item.updated_at,
+  technicalUnitPrice:Math.max(0,N(item.price)),localX:x,localY:y
+ });
  linkedAccessoryPosition(o);model().objects.push(o);U.selected=o.id;refresh(true);return {ok:true,id:o.id};
 }
 function createMesh(o){
@@ -243,7 +261,7 @@ function initStudio(){if(!T())return toast('Three.js non caricato');let canvas=$
  function magnetic(moved){if(!U.snap)return;const threshold=65;let best={x:null,y:null,z:null};for(const q of model().objects){if(q.id===moved.id)continue;for(const axis of ['x','y','z']){const size=axis==='x'?'w':axis==='y'?'h':'d',a=moved[size]/2,b=q[size]/2;let options=[q[axis],q[axis]+a+b,q[axis]-a-b,q[axis]+b-a,q[axis]-b+a];for(const v of options){let d=Math.abs(moved[axis]-v);if(d<=threshold&&(!best[axis]||d<best[axis].d))best[axis]={v,d}}}}for(const axis of ['x','y','z'])if(best[axis])moved[axis]=mm(best[axis].v)}
  canvas.addEventListener('pointerdown',e=>{const id=pick(e),o=model().objects.find(x=>x.id===id);drag={x:e.clientX,y:e.clientY,az:orbit.az,el:orbit.el,id,mode:e.altKey?'orbit':id?'move':'orbit',start:o?{x:o.x,y:o.y,z:o.z}:null,shift:e.shiftKey,moved:false,recorded:false};if(id){U.selected=id;renderProps();renderSidebar();highlight()}canvas.setPointerCapture(e.pointerId)});
  canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)<3&&!drag.moved)return;drag.moved=true;if(drag.mode==='move'&&drag.start){const o=model().objects.find(v=>v.id===drag.id);if(!o)return;if(!drag.recorded){remember();drag.recorded=true}const step=worldScale();const right=new Three.Vector3().setFromMatrixColumn(camera.matrixWorld,0),up=new Three.Vector3().setFromMatrixColumn(camera.matrixWorld,1);if(drag.shift){o.x=mm(drag.start.x+right.x*dx*step-up.x*dy*step);o.z=mm(drag.start.z+right.z*dx*step-up.z*dy*step)}else{o.x=mm(drag.start.x+(right.x*dx-up.x*dy)*step);o.y=mm(drag.start.y+(right.y*dx-up.y*dy)*step);o.z=mm(drag.start.z+(right.z*dx-up.z*dy)*step)}drawScene();}else{orbit.az=drag.az-dx*.006;orbit.el=Math.max(-1.4,Math.min(1.5,drag.el+dy*.005));positionCamera()}});
- canvas.addEventListener('pointerup',()=>{if(drag?.mode==='move'&&drag.moved){let o=model().objects.find(v=>v.id===drag.id);if(o){if(o.technicalSpec){const old=[o.localX,o.localY];linkedAccessoryLocal(o);const owner=model().objects.find(x=>x.id===o.attachTo);if(technicalPatternValid(owner,o.technicalSpec,o.localX,o.localY)){o.localX=old[0];o.localY=old[1];linkedAccessoryPosition(o);toast('Posizione non valida per i tagli del vetro')}}else magnetic(o)}drawScene();renderProps();queueAutosave()}drag=null});
+ canvas.addEventListener('pointerup',()=>{if(drag?.mode==='move'&&drag.moved){let o=model().objects.find(v=>v.id===drag.id);if(o){if(o.technicalSpec){const old=[o.localX,o.localY];linkedAccessoryLocal(o);const owner=model().objects.find(x=>x.id===o.attachTo);if(technicalPatternValid(owner,o.technicalSpec,o.localX,o.localY,o.id)){o.localX=old[0];o.localY=old[1];linkedAccessoryPosition(o);toast('Posizione non valida per i tagli del vetro')}}else magnetic(o)}drawScene();renderProps();queueAutosave()}drag=null});
  canvas.addEventListener('pointercancel',()=>{drag=null});
 canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.dist=Math.max(250,Math.min(70000,orbit.dist*(e.deltaY>0?1.1:.9)));positionCamera()},{passive:false});
  function tick(){if(!V?.studio||V.renderer!==renderer||!document.contains(canvas))return;let rect=canvas.parentElement.getBoundingClientRect(),w=Math.max(1,Math.floor(rect.width)),h=Math.max(1,Math.floor(rect.height));if(canvas.width!==Math.round(w*renderer.getPixelRatio())||canvas.height!==Math.round(h*renderer.getPixelRatio())){renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}renderer.render(scene,camera);requestAnimationFrame(tick)}tick()}
@@ -256,7 +274,7 @@ function edit(id,key,val){
  if(key!=='name'&&!Number.isFinite(value))return toast('Valore numerico non valido');
  if(['w','h','d'].includes(key)&&value<=0)return toast('La dimensione deve essere maggiore di zero');
  if(key==='name'&&(!value||!String(value).trim()))return toast('Inserisci un nome valido');
- remember();o[key]=value;if(o.technicalSpec&&['x','y','z'].includes(key)){linkedAccessoryLocal(o);const parent=model().objects.find(v=>v.id===o.attachTo);const error=technicalPatternValid(parent,o.technicalSpec,o.localX,o.localY);if(error){o[key]=oldValue;linkedAccessoryLocal(o);return toast(error)}}
+ remember();o[key]=value;if(o.technicalSpec&&['x','y','z'].includes(key)){linkedAccessoryLocal(o);const parent=model().objects.find(v=>v.id===o.attachTo);const error=technicalPatternValid(parent,o.technicalSpec,o.localX,o.localY,o.id);if(error){o[key]=oldValue;linkedAccessoryLocal(o);return toast(error)}}
  if((key==='w'||key==='h')&&o.shape?.length>=3){
   const idx=key==='w'?0:1,ratio=value/Math.max(1,oldValue);
   o.shape=o.shape.map(p=>p.map((v,i)=>i===idx?mm(v*ratio):v));
@@ -341,10 +359,10 @@ function toggleRight(){document.body.classList.toggle('vsRightClosed')}
 function toggleQuote(){document.body.classList.remove('vsRightClosed');$id('vsQuoteDetails').open=!$id('vsQuoteDetails').open}
 function cameraPreset(k){const p={iso:[.65,.35],front:[0,0],side:[Math.PI/2,0],top:[0,Math.PI/2-.02]}[k]||[.65,.35];orbit.az=p[0];orbit.el=p[1];positionCamera()}
 function switchMode(){viewMode=viewMode==='real'?'technical':'real';$id('vsVisualBtn').textContent=viewMode==='real'?'✦ Realistico':'▦ Tecnico';drawScene()}
-function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='gltf')downloadGLTF()}
+function exports(v){if(v==='pdf')exportQuote();if(v==='csv')exportCSV();if(v==='png')exportPNG();if(v==='dxf')exportDXF();if(v==='dxf-panel')exportDXF(U.selected??null);if(v==='workshop')exportWorkshopSheet();if(v==='gltf')downloadGLTF()}
 function bindUI(){renderSidebar();navToolbar();document.querySelectorAll('[data-vstab]').forEach(b=>b.classList.toggle('active',b.dataset.vstab===U.tab))}
 function cost(k,v){model()[k]=N(v);updatePricing();queueAutosave()}
-window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},place:placeTechnicalAccessory};
+window.VSTechBridge={selected(){const o=model().objects.find(v=>v.id===U.selected&&['glass','mirror'].includes(v.kind));return o?structuredClone(o):null},validate:(item,x,y)=>{const {ok,error}=technicalPlacement(item,x,y);return {ok,error}},place:placeTechnicalAccessory};
 window.VSCADBridge={
  selected(){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return null;const shape=technicalGlassShape(o);return {...structuredClone(o),shape:shape.outline,holes:technicalHoles(o),cutouts:shape.voids,derivedTechnicalOutline:shape.edgeNotch}},
  commit(outline,holes,profile){const o=model().objects.find(o=>o.id===U.selected&&['glass','mirror'].includes(o.kind));if(!o)return {ok:false,error:'Nessuna lastra selezionata'};
@@ -359,10 +377,17 @@ window.VSCADBridge={
 window.VS={choose,blank,add,accessory,applyModernScene,edit,duplicate,remove,finish,select,shapeEditor,addVertex:()=>{if(!U.shape)return;const p=U.shape.vertices,q=p[p.length-1];p.push([q[0]+100,q[1]+100]);renderShapeFields()},removeVertex:i=>{if(U.shape.vertices.length<=3)return toast('Servono almeno 3 vertici');U.shape.vertices.splice(i,1);renderShapeFields()},addHole:()=>{const result=window.VSGeometry.validate(U.shape.vertices);if(!result.ok)return toast(result.error);let p=U.shape.vertices,x=p.reduce((a,v)=>a+v[0],0)/p.length,y=p.reduce((a,v)=>a+v[1],0)/p.length;U.shape.holes.push({x:mm(x),y:mm(y),r:15});renderShapeFields()},removeHole:i=>{U.shape.holes.splice(i,1);renderShapeFields()},hole:(i,k,v)=>{U.shape.holes[i][k==='diameter'?'r':k]=k==='diameter'?N(v)/2:N(v);renderShapeFields()},cadZoom:f=>{U.shape.zoom=f?Math.max(.4,Math.min(5,U.shape.zoom*f)):1;drawCadShape()},cadGrid:v=>{U.shape.grid=N(v,10);drawCadShape()},cadSnap:v=>{U.shape.snap=!!v},shapePreset:t=>{const o=model().objects.find(o=>o.id===U.shape.id),w=o.w,h=o.h;U.shape.vertices=t==='rectangle'?[[0,0],[w,0],[w,h],[0,h]]:t==='triangle'?[[0,0],[w,0],[w/2,h]]:[[0,0],[w,0],[w*.8,h],[w*.2,h]];U.shape.holes=[];renderShapeFields()},vertex:(i,j,v)=>{U.shape.vertices[i][j]=N(v);renderShapeFields()},applyShape,undo,redo,cost,export:exports,frame:frameModel,camera:cameraPreset,toggleLeft,toggleRight,toggleQuote,toggleSnap:()=>{U.snap=!U.snap;const b=$id('vsSnapBtn');if(b)b.textContent=U.snap?'🧲 Snap: ON':'🧲 Snap: OFF'},viewMode:switchMode,title:updateTitle,changeSettings,tab:t=>{U.tab=t;document.body.classList.remove('vsLeftClosed');bindUI()},setCategory:c=>{U.cat=c;bindUI()}};
 // Existing SaaS remains untouched. Only the old editor entrypoints are replaced.
 designer=designerHTML;init3d=initStudio;rebuild3d=drawScene;camPreset=cameraPreset;calc=pricingModel;
-exportDXF=function(){const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES'];
+exportDXF=function(panelId){
+ const panels=model().objects.filter(o=>['glass','mirror'].includes(o.kind));
+ if(!panels.length)return toast('Nessuna lastra da esportare');
+ if(panelId!==undefined&&!panels.some(o=>o.id===panelId))return toast('Seleziona una lastra da esportare');
+ const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES'];
  const line=(a,b,layer)=>rows.push('0','LINE','8',layer,'10',String(a[0]),'20',String(a[1]),'30','0','11',String(b[0]),'21',String(b[1]),'31','0');
- for(const [i,o] of model().objects.filter(x=>['glass','mirror'].includes(x.kind)).entries()){
-  const derived=technicalGlassShape(o);const layer='LASTRA_'+(i+1),pts=derived.outline;
+ for(const [i,o] of panels.entries()){
+  if(panelId!==undefined&&o.id!==panelId)continue;
+  let derived;
+  try{derived=technicalGlassShape(o)}catch(error){return toast('Esportazione DXF bloccata per '+o.name+': '+error.message)}
+  const layer='LASTRA_'+(i+1),pts=derived.outline;
   if(!window.VSGeometry.validate(pts,technicalHoles(o)).ok){toast('Esportazione DXF bloccata: geometria non valida '+o.name);return}
   if(!technicalCutouts(o).length&&o.cadProfile?.points?.length>=3&&o.cadProfile.bulges?.some(b=>Math.abs(b||0)>1e-9)){
    const profile=o.cadProfile;
@@ -371,7 +396,39 @@ exportDXF=function(){const rows=['0','SECTION','2','HEADER','9','$INSUNITS','70'
   }else for(let j=0;j<pts.length;j++)line(pts[j],pts[(j+1)%pts.length],layer);
   for(const h of technicalHoles(o)){if(h.type==='slot'&&h.length>2*h.r){const poly=window.VSGeometry.slotOutline(h,32);for(let j=0;j<poly.length;j++)line(poly[j],poly[(j+1)%poly.length],layer+'_ASOLE')}else rows.push('0','CIRCLE','8',layer+'_FORI','10',String(h.x),'20',String(h.y),'30','0','40',String(h.r))}for(const polygon of derived.voids)for(let i=0;i<polygon.length;i++)line(polygon[i],polygon[(i+1)%polygon.length],layer+'_TAGLI')
  }
- rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+'.dxf',rows.join('\n'),'application/dxf')};
+ rows.push('0','ENDSEC','0','EOF');download('vetri-'+safeFile(S.current.title)+(panelId===undefined?'':'-lastra-'+(panels.findIndex(o=>o.id===panelId)+1))+'.dxf',rows.join('\n'),'application/dxf')};
+function exportWorkshopSheet(){
+ const panels=model().objects.filter(o=>['glass','mirror'].includes(o.kind));
+ if(!panels.length)return toast('Nessuna lastra da esportare');
+ const sections=[];
+ for(const [i,panel] of panels.entries()){
+  let shape;
+  try{shape=technicalGlassShape(panel)}catch(error){return toast('Scheda bloccata per '+panel.name+': '+error.message)}
+  const holes=technicalHoles(panel);
+  if(!window.VSGeometry.validate(shape.outline,holes).ok)return toast('Scheda bloccata: geometria non valida per '+panel.name);
+  const accessories=model().objects.filter(o=>o.attachTo===panel.id&&o.technicalSpec);
+  const holeRows=holes.map((h,n)=>`<tr><td>${n+1}</td><td>${N(h.x)}</td><td>${N(h.y)}</td><td>${mm(h.r*2)}</td><td>${h.type==='slot'?'Asola · '+N(h.length)+' mm · '+N(h.angle)+'°':'Foro'}</td></tr>`).join('');
+  const fittings=accessories.map(a=>`<li>${esc(a.technicalCode||'')} · ${esc(a.name)} · X ${N(a.localX)}, Y ${N(a.localY)} mm · ${a.technicalSpec.cutouts?.length||0} scassi</li>`).join('');
+  const points=poly=>poly.map(([x,y])=>[N(x),-N(y)].join(',')).join(' ');
+  const innerCuts=shape.voids.map(poly=>`<polygon points="${points(poly)}" fill="white" stroke="#333" vector-effect="non-scaling-stroke"/>`).join('');
+  const drillMarks=holes.map(h=>h.type==='slot'
+   ?`<polygon points="${points(window.VSGeometry.slotOutline(h))}" fill="white" stroke="#333" vector-effect="non-scaling-stroke"/>`
+   :`<circle cx="${N(h.x)}" cy="${-h.y}" r="${N(h.r)}" fill="white" stroke="#333" vector-effect="non-scaling-stroke"/>`).join('');
+  sections.push(`<section><h2>Lastra ${i+1} · ${esc(panel.name)}</h2>
+   <p>Ingombro ${N(panel.w)} × ${N(panel.h)} mm · Spessore ${N(panel.d)} mm</p>
+   <svg width="100%" height="220" viewBox="-2 ${-panel.h-2} ${N(panel.w)+4} ${N(panel.h)+4}" aria-label="Contorno e lavorazioni">
+    <polygon points="${points(shape.outline)}" fill="#e5f3f7" stroke="#333" vector-effect="non-scaling-stroke"/>${innerCuts}${drillMarks}
+   </svg>
+   ${holes.length?`<table><thead><tr><th>N.</th><th>X (mm)</th><th>Y (mm)</th><th>Ø (mm)</th><th>Tipo</th></tr></thead><tbody>${holeRows}</tbody></table>`:'<p>Nessuna foratura.</p>'}
+   ${fittings?`<h3>Ferramenta tecnica</h3><ul>${fittings}</ul>`:''}</section>`);
+ }
+ const title=esc(S.current.title);
+ const page=`<!doctype html><html lang="it"><meta charset="utf-8"><title>Scheda lavorazioni · ${title}</title>
+ <style>body{font:14px system-ui;color:#132835;max-width:780px;margin:30px auto;padding:0 16px}section{border-top:1px solid #b8c6ca;margin-top:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccd4d8;padding:6px;text-align:left}svg{display:block}tr{break-inside:avoid}</style>
+ <h1>Scheda lavorazioni · ${title}</h1><p>Quote in millimetri, origine in basso a sinistra della vista frontale. Per la geometria degli scassi usa il DXF della lastra e verifica gli elaborati prima della lavorazione.</p>
+ ${sections.join('')}</html>`;
+ download('scheda-lavorazioni-'+safeFile(S.current.title)+'.html',page,'text/html;charset=utf-8');
+}
 exportCSV=function(){const p=pricingModel(),rows=[['Voce','Valore'],['Superficie vetro m²',p.area.toFixed(2)],['Materiali €',p.material.toFixed(2)],['Accessori €',p.accessories.toFixed(2)],['Imponibile €',p.net.toFixed(2)],['IVA €',p.tax.toFixed(2)],['Totale €',p.total.toFixed(2)]];download('distinta-'+safeFile(S.current.title)+'.csv','\uFEFF'+rows.map(r=>r.map(v=>String(v)).join(';')).join('\r\n'),'text/csv')};
 const style=document.createElement('style');style.textContent=`
 body.vsActive{overflow:hidden}body.vsActive .sidebar,body.vsActive .top{display:none!important}body.vsActive .main{width:100%;height:100vh;overflow:hidden}body.vsActive #page{padding:0;max-width:none;margin:0;height:100vh;overflow:hidden}

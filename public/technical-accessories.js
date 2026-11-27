@@ -249,25 +249,98 @@ function parseDXF(input){const raw=input.replace(/\r/g,'').split('\n'),pairs=[];
  const coords=[...holes.map(h=>[h.x,h.y]),...cutouts.flat()],cx=(Math.min(...coords.map(q=>q[0]))+Math.max(...coords.map(q=>q[0])))/2,cy=(Math.min(...coords.map(q=>q[1]))+Math.max(...coords.map(q=>q[1])))/2;
  return {holes:holes.map(h=>({...h,x:Math.round((h.x-cx)*100)/100,y:Math.round((h.y-cy)*100)/100})),cutouts:cutouts.map(poly=>poly.map(p=>[+(p[0]-cx).toFixed(2),+(p[1]-cy).toFixed(2)])),origin:[cx,cy],ignored};}
 async function extractDXF(){try{const r=await fetch('/api/technical-accessories/'+S.selected.id+'/files/dxf',{credentials:'same-origin'});if(!r.ok)throw Error('Carica prima un file DXF ASCII');const txt=await r.text();const result=parseDXF(txt);if(!confirm(`Riconosciuti ${result.holes.length} fori e ${result.cutouts.length} contorni chiusi. Entità ignorate: ${result.ignored.length}. Sostituire le lavorazioni attuali?`))return;S.cuts={holes:result.holes,cutouts:result.cutouts,origin:result.origin};detail();notify('Geometrie importate: verifica le quote e approva la scheda.')}catch(e){notify(e.message)}}
-function renderPicker(){return `<div><h3>Inserisci accessorio tecnico</h3><p class="small">Seleziona una lastra, poi indica il punto di fissaggio misurato dal bordo sinistro e inferiore.</p><label class="label">Accessorio approvato</label><select class="field" id="pickTech" onchange="VSTech.updatePicker()">${S.items.filter(t=>t.status==='approved').map(t=>`<option value="${t.id}">${E(t.code)} · ${E(t.name)} (${t.glass_min}–${t.glass_max} mm)</option>`).join('')}</select><div class="grid2"><label>X sul vetro (mm)<input class="field" type="number" id="pickX" value="300"></label><label>Y sul vetro (mm)<input class="field" type="number" id="pickY" value="500"></label></div><p id="pickNotchHint" class="small"></p><div class="actions"><button class="btn primary" onclick="VSTech.place()">Applica lavorazioni e inserisci 3D</button></div></div>`}
-async function picker(){if(!window.VSTechBridge?.selected())return notify('Seleziona prima una lastra nel configuratore 3D');try{S.items=(await request('/technical-accessories')).items;if(!S.items.some(t=>t.status==='approved'))return notify('Nessun accessorio approvato: aggiungine uno in Libreria tecnica');openModal(renderPicker());const o=window.VSTechBridge.selected();$('pickX').value=Math.round(o.w/2);$('pickY').value=Math.round(o.h/2);await updatePicker()}catch(e){notify(e.message)}}
-async function updatePicker(){
- try{
-  const id=$('pickTech')?.value;if(!id)return;
-  const d=await request('/technical-accessories/'+id);
-  if($('pickTech')?.value!==id)return;
-  const spec=safeJson(d.item.cut_spec);
-  const el=$('pickNotchHint'),owner=window.VSTechBridge?.selected();
-  if(spec.edgeNotch&&owner&&spec.cutouts?.[0]?.length){
-   const xs=spec.cutouts[0].map(p=>Number(p[0])).filter(Number.isFinite);
-   if(xs.length){
-    const offset=-Math.min(...xs);
-    $('pickX').value=Number(offset.toFixed(3));
-    if(el)el.textContent='Scasso sul bordo sinistro: X posizionato automaticamente a '+offset.toFixed(2)+' mm. Regola Y in base alla quota di montaggio del produttore.';
-   }
-  }else if(el)el.textContent='Imposta il punto di fissaggio in millimetri.';
- }catch(e){notify('Posizione automatica non disponibile: '+e.message)}
+let pickerItem=null;
+function renderPicker(items){
+ return `<div><h3>Posiziona accessorio</h3>
+ <label class="label" for="pickTech">Accessorio approvato</label>
+ <select class="field" id="pickTech" onchange="VSTech.updatePicker()">${items.map(t=>`<option value="${E(t.id)}">${E(t.code)} · ${E(t.name)}</option>`).join('')}</select>
+ <div class="grid2"><label>X dal bordo sinistro (mm)<input class="field" type="number" step="any" id="pickX" oninput="VSTech.previewPlacement()"></label>
+ <label>Y dal bordo inferiore (mm)<input class="field" type="number" step="any" id="pickY" oninput="VSTech.previewPlacement()"></label></div>
+ <label class="small" id="pickSnapLabel" hidden><input id="pickSnap" type="checkbox" onchange="VSTech.previewPlacement()"> Aggancia lo scasso al bordo sinistro</label>
+ <p class="small">Clicca sulla lastra per impostare la posizione oppure inserisci le quote.</p>
+ <svg id="pickDrawing" width="100%" height="260" role="img" aria-label="Anteprima 2D della lastra e delle lavorazioni" onclick="VSTech.pickPoint(event)"></svg>
+ <p id="pickNotchHint" class="small" role="status" aria-live="polite"></p>
+ <div class="actions"><button id="pickApply" class="btn primary" disabled onclick="VSTech.place()">Applica e mostra in 3D</button></div></div>`;
 }
-async function place(){try{const id=$('pickTech').value;const row=S.items.find(t=>t.id===id);const d=await request('/technical-accessories/'+id);const cuts=safeJson(d.item.cut_spec);const res=window.VSTechBridge.place({...row,cut_spec:cuts,model_meta:safeJson(d.item.model_meta)},Number($('pickX').value),Number($('pickY').value));if(!res.ok)throw Error(res.error);closeModal();notify('Accessorio inserito e lavorazioni applicate al vetro')}catch(e){notify(e.message)}}
-window.VSTech={version:'R13-dxf-arc-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,place,parseDXF};
+async function picker(beforeOpen){
+ const owner=window.VSTechBridge?.selected();
+ if(!owner)return notify('Seleziona prima una lastra');
+ try{
+  const {items}=await request('/technical-accessories');
+  if(window.VSTechBridge.selected()?.id!==owner.id)return;
+  const compatible=items.filter(t=>t.status==='approved'&&owner.d>=Number(t.glass_min)&&owner.d<=Number(t.glass_max));
+  if(!compatible.length)return notify('Nessun accessorio approvato compatibile con lo spessore della lastra');
+  if(typeof beforeOpen==='function'&&beforeOpen()===false)return;
+  pickerItem=null;
+  openModal(renderPicker(compatible));
+  $('pickX').value=Number((owner.w/2).toFixed(3));
+  $('pickY').value=Number((owner.h/2).toFixed(3));
+  await updatePicker();
+ }catch(e){notify(e.message)}
+}
+async function updatePicker(){
+ const select=$('pickTech');
+ const id=select?.value;
+ if(!id)return;
+ pickerItem=null;
+ previewPlacement();
+ try{
+  const {item}=await request('/technical-accessories/'+encodeURIComponent(id));
+  if($('pickTech')!==select||select.value!==id)return;
+  pickerItem={...item,cut_spec:safeJson(item.cut_spec)};
+  $('pickSnap').checked=Boolean(pickerItem.cut_spec.edgeNotch&&pickerItem.cut_spec.cutouts?.[0]?.length);
+  previewPlacement();
+ }catch(e){if($('pickTech')===select&&select.value===id)$('pickNotchHint').textContent=e.message}
+}
+function previewPlacement(){
+ const owner=window.VSCADBridge.selected(),spec=pickerItem?.cut_spec,svg=$('pickDrawing');
+ if(!svg)return null;
+ const status=$('pickNotchHint'),apply=$('pickApply');
+ apply.disabled=true;
+ if(!owner){status.textContent='Seleziona una lastra';return null}
+ const snap=$('pickSnap'),inputX=$('pickX');
+ $('pickSnapLabel').hidden=!(spec?.edgeNotch&&spec.cutouts?.[0]?.length);
+ inputX.readOnly=!$('pickSnapLabel').hidden&&snap.checked;
+ if(inputX.readOnly)inputX.value=-Math.min(...spec.cutouts[0].map(p=>Number(p[0])));
+ const x=inputX.valueAsNumber,y=$('pickY').valueAsNumber;
+ const positioned=Number.isFinite(x)&&Number.isFinite(y);
+ const result=pickerItem&&positioned?window.VSTechBridge.validate(pickerItem,x,y):null;
+ const margin=Math.max(owner.w,owner.h)*.08;
+ svg.setAttribute('viewBox',[-margin,-owner.h-margin,owner.w+2*margin,owner.h+2*margin].join(' '));
+ const polygon=(points,fill,stroke)=>`<polygon points="${points.map(([px,py])=>[Number(px),-Number(py)].join(',')).join(' ')}" fill="${fill}" stroke="${stroke}" vector-effect="non-scaling-stroke"/>`;
+ const circle=(cx,cy,r,fill)=>`<circle cx="${cx}" cy="${-cy}" r="${r}" fill="${fill}" stroke="#334155" vector-effect="non-scaling-stroke"/>`;
+ let drawing=polygon(owner.shape,'#dff4fa','#256278');
+ for(const poly of owner.cutouts) drawing+=polygon(poly,'#fff','#64748b');
+ for(const hole of owner.holes){
+  drawing+=hole.type==='slot' ? polygon(window.VSGeometry.slotOutline(hole),'#fff','#64748b') : circle(hole.x,hole.y,hole.r,'#fff');
+ }
+ if(spec&&positioned){
+  const fill=result?.ok?'#6ee7b7':'#fca5a5';
+  for(const poly of spec.cutouts||[])drawing+=polygon(poly.map(([px,py])=>[x+Number(px),y+Number(py)]),fill,'#334155');
+  for(const hole of spec.holes||[])drawing+=circle(x+Number(hole.x),y+Number(hole.y),Number(hole.r),fill);
+  drawing+=circle(x,y,margin/9,'#334155');
+ }
+ svg.innerHTML=drawing;
+ apply.disabled=!result?.ok;
+ status.textContent=result?.ok?'Posizione valida.':result?.error||(spec?'Inserisci entrambe le quote.':'Caricamento scheda…');
+ return result?.ok?{x,y}:null;
+}
+function pickPoint(event){
+ const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(event.currentTarget.getScreenCTM().inverse());
+ const owner=window.VSTechBridge.selected();
+ if(!owner||point.x<0||point.x>owner.w||-point.y<0||-point.y>owner.h)return;
+ if(!$('pickX').readOnly)$('pickX').value=point.x.toFixed(3);
+ $('pickY').value=(-point.y).toFixed(3);
+ previewPlacement();
+}
+function place(){
+ const position=previewPlacement();
+ if(!position)return;
+ const res=window.VSTechBridge.place(pickerItem,position.x,position.y);
+ if(!res.ok)return notify(res.error);
+ pickerItem=null;
+ closeModal();
+ notify('Accessorio inserito e lavorazioni applicate al vetro');
+}
+window.VSTech={version:'R13-dxf-arc-20261123',library,render:refresh,open,create,save,upload,download,deleteItem,addHole,dropHole,dropCutout,movePattern,extractDXF,importPackage,autoImport,inspectDwg,downloadOriginalDxf,chooseCandidate,selectLayer,exportDxf,picker,updatePicker,previewPlacement,pickPoint,place,parseDXF};
 })();
